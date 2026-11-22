@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.egg-info/
+.env
+# meeting outputs and recordings: may contain confidential content
+*_纪要/
+*.m4a
+*.mp3
+*.wav
+*.mp4

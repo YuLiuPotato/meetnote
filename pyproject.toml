@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "meetnote"
+version = "0.1.0"
+description = "会议录音 → 转写稿 + 全文梗概 + 两页精华"
+requires-python = ">=3.10"
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Yu Liu" }]
+dependencies = [
+    "faster-whisper>=1.1",
+    "anthropic>=0.70",
+    "openai>=1.40",  # DeepSeek and other OpenAI-compatible APIs
+    "python-dotenv>=1.0",  # API keys and server settings live in meetnote/.env
+    "sherpa-onnx>=1.12",  # speaker diarization on CPU (models download on first use)
+    "truststore>=0.9",  # OS certificate store for the model download
+    # web service (meetnote serve)
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "python-multipart>=0.0.9",
+    # CUDA runtime libs for GPU transcription on Windows/Linux (no system CUDA install needed)
+    "nvidia-cublas-cu12; platform_system != 'Darwin'",
+    "nvidia-cudnn-cu12==9.*; platform_system != 'Darwin'",
+]
+
+[project.scripts]
+meetnote = "meetnote.cli:main"
+
+[tool.setuptools]
+packages = ["meetnote", "meetnote.prompts", "meetnote.static"]
+
+[tool.setuptools.package-data]
+meetnote = ["prompts/*.md", "static/*.html"]
