@@ -1,13 +1,17 @@
 # meetnote
 
-会议录音 → **转写稿** + **全文梗概** + **两页精华**，一条命令跑完。
+**English** | [简体中文](README.zh-CN.md)
 
-- 转写：本地 faster-whisper（large-v3），有 NVIDIA 显卡自动走 GPU。1 小时录音大约几分钟，无需 ffmpeg。
-- 总结：调用大模型生成，默认用 DeepSeek，也支持其他 OpenAI 兼容服务和 Claude。
+Meeting recording → **transcript with speakers** + **full synopsis** + **two-page highlights**, in one command.
 
-## 安装（一次性）
+- **Transcription** runs locally with faster-whisper (large-v3) and uses an NVIDIA GPU automatically. An hour of audio takes a few minutes; no ffmpeg needed.
+- **Speaker separation** runs locally on the CPU (sherpa-onnx + 3D-Speaker CAM++), at the same time as transcription.
+- **Summaries** come from an LLM: DeepSeek by default, or any OpenAI-compatible service, or Claude. Every point carries a `[mm:ss]` citation, and a separate pass fact-checks the draft against the transcript before it is revised.
+- Works with Chinese, English and mixed-language meetings: each part stays in the language it was spoken in.
 
-需要 Windows、Python 3.10+；有 NVIDIA 显卡会快很多。
+## Install
+
+Requires Windows and Python 3.10+. An NVIDIA GPU makes it much faster.
 
 ```powershell
 git clone https://github.com/YuLiuPotato/meetnote.git
@@ -15,189 +19,194 @@ cd meetnote
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-安装脚本会在 `meetnote\.venv` 建独立环境，并在 `%USERPROFILE%\.local\bin` 放一个 `meetnote.cmd`（请确认这个目录在 PATH 上）。Whisper 模型（约 3GB）第一次运行时自动下载。
+The script creates a virtual environment in `meetnote\.venv` and puts a `meetnote.cmd` launcher in `%USERPROFILE%\.local\bin` (make sure that folder is on your PATH). The Whisper model (~3 GB) and the speaker models (~35 MB) download on first use.
 
-### 配置文件 `.env`
+### Configuration: `.env`
 
-API key、端口、访问码都写在 `meetnote\.env` 里（安装时从 `.env.example` 复制生成），不需要设置系统环境变量。用记事本打开，填上：
+API keys, port and access code live in `meetnote\.env` (created from `.env.example` during install), not in system environment variables. Open it in a text editor and fill in:
 
 ```ini
-DEEPSEEK_API_KEY=sk-你的key
+DEEPSEEK_API_KEY=sk-your-key
 ```
 
-`.env` 的查找顺序：环境变量 `MEETNOTE_ENV_FILE` 指定的文件 → 当前目录的 `.env` → `meetnote\.env`。已经存在的同名环境变量优先于文件。`.env` 已在 `.gitignore` 里，不要发给别人。
+Lookup order: the file named by `MEETNOTE_ENV_FILE` → `.env` in the current folder → `meetnote\.env`. Environment variables that are already set win over the file. `.env` is in `.gitignore`; never share it.
 
-**总结需要配置一个大模型（`--backend auto` 会按下表顺序选第一个配置好的）：**
+**Summaries need one LLM backend** (`--backend auto` picks the first one configured, in this order):
 
-| 后端 | `.env` 里填 | 默认模型 |
+| Backend | Set in `.env` | Default model |
 |---|---|---|
-| `deepseek`（推荐） | `DEEPSEEK_API_KEY`（在 platform.deepseek.com 申请） | `deepseek-chat`，可用 `--model deepseek-reasoner` |
-| `openai` | `MEETNOTE_BASE_URL` + `MEETNOTE_API_KEY` + `MEETNOTE_MODEL`，适用于 Kimi、通义、智谱等 OpenAI 兼容服务 | 自己指定 |
-| `claude-cli` | 不用填；安装独立版 Claude Code，`claude` 在 PATH 上并已登录 | 你的 Claude Code 设置 |
+| `deepseek` (recommended) | `DEEPSEEK_API_KEY` (from platform.deepseek.com) | `deepseek-chat`; `--model deepseek-reasoner` also works |
+| `openai` | `MEETNOTE_BASE_URL` + `MEETNOTE_API_KEY` + `MEETNOTE_MODEL`, for any OpenAI-compatible service (OpenAI, Kimi, Qwen, GLM, …) | your choice |
+| `claude-cli` | nothing; needs the standalone Claude Code with `claude` on PATH and logged in | your Claude Code settings |
 | `claude-api` | `ANTHROPIC_API_KEY` | `claude-opus-5-5` |
 
-## 用法
+## Usage
 
 ```powershell
-# 完整流程
-meetnote run "D:\录音\周会.m4a"
+# Full run
+meetnote run "D:\recordings\weekly.m4a"
 
-# 加上术语和背景，识别和总结都更准
-meetnote run 周会.m4a --terms "Kubernetes,OKR,张伟" --context "产品团队的季度路线讨论"
+# Names/terms and some background improve both recognition and summaries
+meetnote run weekly.m4a --terms "Kubernetes,OKR,Alice Chen" --context "Product team quarterly roadmap review"
 
-# 知道参会人数就写上，区分说话人会准很多
-meetnote run 周会.m4a --speakers 3
+# If you know the head count, give it: speaker separation gets much more reliable
+meetnote run weekly.m4a --speakers 3
 
-# 只转写 / 对已有转写稿重新生成总结（比如改了提示词之后）
-meetnote transcribe 周会.m4a
-meetnote summarize 周会_纪要
+# Summaries in another language than the recording (default: same as the recording)
+meetnote run weekly.m4a --summary-lang en
 
-# 把说话人标签换成姓名，再重新生成纪要
-meetnote rename 周会_纪要 S1=张三 S2=李四
-meetnote summarize 周会_纪要
+# Transcribe only / re-summarize an existing transcript (e.g. after editing the prompts)
+meetnote transcribe weekly.m4a
+meetnote summarize weekly_纪要
+
+# Replace speaker labels with names, then regenerate the notes
+meetnote rename weekly_纪要 S1=Alice S2=Bob
+meetnote summarize weekly_纪要
 ```
 
-输出默认放在当前目录的 `<文件名>_纪要\` 下：
+Output goes to `<file name>_纪要\` in the current folder (file names are in Chinese; the content follows `--summary-lang`):
 
 ```
-周会_纪要\
-  转写稿.txt     带时间戳和说话人的全文，如 “[01:23] S2: ……”；说话人一换就换行
-  转写稿.srt     字幕格式，可以拖进播放器对照原音
-  要点笔记.md    逐段整理的观点/事实/决定，每条带时间戳和评价对象
-  全文梗概.md    按时间顺序还原整场会议，带出处时间戳
-  两页精华.md    结论先行，控制在两页 A4，带出处时间戳
-  核查记录.md    核查员发现并已修订的问题
-  meta.json      时长、语言、来源文件等
+weekly_纪要\
+  转写稿.txt     transcript: timestamps and speakers, e.g. "[01:23] S2: …"; new line at every change of speaker
+  转写稿.srt     subtitles, to check against the audio in a player
+  要点笔记.md    section-by-section notes: views/facts/decisions, each with timestamp and what it refers to
+  全文梗概.md    full synopsis: the whole meeting in order, with citations
+  两页精华.md    two-page highlights: conclusions first, fits on two A4 pages, with citations
+  核查记录.md    what the fact-check pass found and fixed
+  meta.json      duration, language, speakers, source file
 ```
 
-### 多语言
+### Languages
 
-- 录音语言默认**自动识别**，并且**逐段识别**：中英混杂的会议，中文部分出中文、英文部分出英文，不会互相翻译。识别不准时可用 `--language zh` 等固定。
-- 纪要语言默认跟录音语言一致，可用 `--summary-lang zh` / `en` 指定（比如英文会议出中文纪要）。
+- The recording language is **detected automatically, segment by segment**: in a mixed Chinese/English meeting, Chinese stays Chinese and English stays English instead of being translated. Each speaker's stretch is re-checked against its own audio, and re-transcribed if Whisper wrote it in the wrong language. Use `--language zh` (or `en`, …) to force one language.
+- Summaries follow the recording's language unless you set `--summary-lang`.
 
-### 区分说话人
+### Speakers
 
-转写时会自动区分说话人，每行标上 `S1`、`S2`……（按第一次开口的顺序编号）。纪要会按标签写“S1 认为……”，不会猜标签对应的真名；转写稿里有自我介绍或点名称呼时，会写成“S2（自称李明）”。
+Lines are labelled `S1`, `S2`, … in order of first appearance. The notes attribute by label ("S1 argues …") and never guess real names; if someone introduces themselves or is addressed by name, they write e.g. "S2 (introduces themselves as Alice)".
 
-- **知道人数就填** `--speakers N`（网页上是“参会人数”）。不填时自动估计，说话少于约 1 分钟的人可能被并到别人身上。
-- **换成真名**：先看转写稿里每个标签说了什么，再用 `meetnote rename`（网页上是“说话人 · 填写姓名”）。同一个人被分成两个标签时，填同一个名字就会合并。
-- 原理：sherpa-onnx 先找出语音段和换人的位置（pyannote segmentation-3.0），然后每 1.5 秒提取一次声纹（3D-Speaker CAM++，中英文训练），再按声音相似度聚类。全部在 CPU 上运行，和显卡上的转写同时进行，不需要 Hugging Face token。模型约 35 MB，第一次使用时自动下载到 `%USERPROFILE%\.cache\meetnote\models`。
-- 不想区分说话人：`--no-diarize`。
-- 局限：两人同时说话时只标一个人；“嗯”“对”这类一两个字的插话容易标错；电话会议、远场麦克风效果会差一些。
+- **Give the head count** with `--speakers N` ("参会人数" on the web page). Without it the count is estimated.
+- **Use real names**: check what each label said in the transcript, then run `meetnote rename` (on the web page: "说话人 · 填写姓名"). If one person was split into two labels, give both the same name to merge them.
+- How it works: pyannote segmentation-3.0 (via sherpa-onnx) finds speech and speaker changes; every ~1.5 s of speech gets a CAM++ voice embedding (trained on Chinese and English); windows are grouped by average-linkage clustering on voice similarity. Small clusters are folded into a speaker only if they sound like that speaker; otherwise they stay separate, so short-spoken participants such as Q&A questioners are kept. Speech the speaker detector heard but Whisper skipped is transcribed separately. No Hugging Face token needed; models are cached in `%USERPROFILE%\.cache\meetnote\models`.
+- `--no-diarize` turns it off.
+- Limits: only one speaker per line when people talk over each other; one- or two-word interjections are often mislabelled; far-field and phone recordings do worse.
 
-### 总结流程与准确性
+### Summarization and accuracy
 
-默认的 `grounded` 流程分四步，专门针对“张冠李戴”：
+The default `grounded` pipeline targets one failure in particular: opinions attributed to the wrong product, version or person.
 
-1. **逐段抽取**：把转写稿切成约 10 分钟一段，逐段整理要点，每条观点必须写明**评价对象**（哪个产品/版本/方案）和时间戳，对象不明就标“对象不明”。
-2. **带出处撰写**：以要点笔记为依据写梗概和精华，每条结论后标 `[mm:ss]`。
-3. **逐条核查**：另一次调用对照转写稿检查无依据、对象错误、归属错误、方向/数字错误、过度概括。
-4. **按核查意见修订**。
+1. **Extract**: the transcript is split into ~10-minute sections; each view is noted with *what it is about* and a timestamp ("object unclear" when it can't be told).
+2. **Write with citations**: synopsis and highlights are written from those notes, each point followed by `[mm:ss]`.
+3. **Fact-check**: a separate call checks every statement against the transcript for unsupported claims, wrong object, wrong speaker, wrong direction/number and over-generalization.
+4. **Revise** only what the check flagged.
 
-`--pipeline simple` 是旧的单次生成，更快更省，但长会议容易混淆。
+`--pipeline simple` is the old single-pass mode: faster and cheaper, but long meetings get mixed up.
 
-评估纪要忠实度（拆成单条陈述逐条对照转写稿打分，评审默认用 `deepseek-reasoner`）：
+To score how faithful the notes are (statement by statement against the transcript; the judge defaults to `deepseek-reasoner`):
 
 ```powershell
-meetnote check 周会_纪要
+meetnote check weekly_纪要
 ```
 
-结果写在 `忠实度评估.md`。注意：LLM 评审本身也会出错（TofuEval 发现即使 GPT-4 做二元事实判断也不可靠），适合比较两个版本的相对好坏，不能当作绝对分数。
+The result is written to `忠实度评估.md`. LLM judges make mistakes too (TofuEval found binary "is this supported?" judgments unreliable even with GPT-4), so use it to compare versions, not as an absolute score. How the pipeline was evaluated and improved: [docs/accuracy-evaluation.md](docs/accuracy-evaluation.md).
 
-已经有转写稿时，`run` 会跳过转写直接总结；需要重新转写时加 `--force`。
+If a transcript already exists, `run` skips transcription; add `--force` to redo it.
 
-## 常用参数
+## Options
 
-| 参数 | 作用 |
+| Option | What it does |
 |---|---|
-| `-o DIR` | 指定输出目录 |
-| `--terms` | 人名、术语提示，逗号分隔，提升识别准确率 |
-| `--context` | 会议背景，帮助 Claude 纠正术语、理解上下文 |
-| `--only synopsis/highlights` | 只生成其中一份 |
-| `--backend` | 强制选择总结后端：`deepseek` / `openai` / `claude-cli` / `claude-api` |
-| `--model` | 指定模型名 |
-| `--whisper-model medium` | 更快、稍不准的转写模型 |
-| `--device cpu` | 没有显卡时使用（会慢很多） |
-| `--language zh` | 固定录音语言（默认自动识别） |
-| `--speakers 3` | 参会人数（默认自动估计） |
-| `--no-diarize` | 不区分说话人 |
-| `--summary-lang en` | 纪要语言（默认跟录音一致） |
-| `--pipeline simple` | 单次生成，快但不如默认流程准确 |
+| `-o DIR` | output folder |
+| `--terms` | names and terms, comma-separated, to improve recognition |
+| `--context` | background about the meeting, to fix terms and understand context |
+| `--only synopsis/highlights` | generate only one of the two |
+| `--backend` | force a backend: `deepseek` / `openai` / `claude-cli` / `claude-api` |
+| `--model` | model name |
+| `--whisper-model medium` | faster, slightly less accurate transcription |
+| `--device cpu` | no GPU (much slower) |
+| `--language zh` | force the recording language (default: detect) |
+| `--speakers 3` | number of participants (default: estimate) |
+| `--no-diarize` | don't separate speakers |
+| `--summary-lang en` | language of the notes (default: same as the recording) |
+| `--pipeline simple` | single pass: faster, less accurate |
 
-`.env` 里的 `MEETNOTE_CLAUDE` 可以指定 claude 可执行文件的路径。
+`MEETNOTE_CLAUDE` in `.env` can point to the `claude` executable.
 
-## 网页服务（给同事用）
+## Web service (for colleagues)
 
-在一台有 NVIDIA 显卡的机器上运行网页服务，同事用浏览器上传录音、查看和下载纪要，不需要安装任何东西。
+Run it on one machine with an NVIDIA GPU; colleagues upload recordings and read or download the notes in the browser, with nothing to install. The page switches between Chinese and English (top right) and follows the browser language by default.
 
-- 任务按顺序排队，同一时间只转写一个，1 小时录音大约 3–5 分钟。
-- 每个任务有一个不可猜测的链接（`/#job=…`），可以“复制分享链接”发给其他同事。
-- 原始录音转写完就删除，只保留文字结果；结果默认保留 30 天（`--keep-days`）。
-- 总结失败时转写稿会保留，页面上可以一键“重新生成总结”。
-- 服务重启后，没跑完的任务会自动重新排队。
+- Jobs are queued and transcribed one at a time; an hour of audio takes 3–5 minutes.
+- Each job has an unguessable link (`/#job=…`) that can be shared.
+- The original recording is deleted after transcription; only text is kept, for 30 days by default (`--keep-days`).
+- If summarizing fails, the transcript is kept and the page offers "regenerate".
+- Unfinished jobs resume after a restart.
 
-### 1. 配置（一次性）
+### 1. Configure (once)
 
-在 `meetnote\.env` 里填写（key 只放在服务器上，同事不需要）：
+In `meetnote\.env` (the key stays on the server; colleagues don't need it):
 
 ```ini
-DEEPSEEK_API_KEY=sk-你的key
-# 可选：访问码，打开网页时需要输入
-MEETNOTE_ACCESS_CODE=自己定一个
-# 可选：换端口，默认 18765
+DEEPSEEK_API_KEY=sk-your-key
+# optional: access code asked for when opening the page
+MEETNOTE_ACCESS_CODE=choose-one
+# optional: port, default 18765
 # MEETNOTE_PORT=18765
 ```
 
-改完 `.env` 需要重启服务。
+Restart the service after editing `.env`.
 
-### 2. 启动
+### 2. Start
 
-双击 `start-server.cmd`，或在终端运行它。服务监听 `http://localhost:18765`（端口以 `.env` 为准），数据存在 `%USERPROFILE%\meetnote-data`。启动日志第一行会显示读取的是哪个 `.env`。
+Double-click `start-server.cmd` or run it in a terminal. The service listens on `http://localhost:18765` (port from `.env`) and stores data in `%USERPROFILE%\meetnote-data`. The first log line shows which `.env` was read.
 
-开机自动启动（登录后会弹出一个服务窗口，关掉窗口就是停止服务）：
+Start on login (a service window opens after login; closing it stops the service):
 
 ```powershell
-schtasks /Create /TN meetnote /SC ONLOGON /TR "<meetnote 所在目录>\start-server.cmd"
+schtasks /Create /TN meetnote /SC ONLOGON /TR "<meetnote folder>\start-server.cmd"
 ```
 
-如果用笔记本做服务器，记得在电源设置里把“接通电源时睡眠”改成“从不”。
+If a laptop is the server, set "When plugged in, sleep after" to "Never".
 
-### 3. 让同事访问：Tailscale（推荐）
+### 3. Give colleagues access: Tailscale (recommended)
 
-先在这台机器上安装并登录 Tailscale。用 Tailscale 自带的 HTTPS 反向代理把服务暴露到 tailnet 内部，不对公网开放：
+Install and log in to Tailscale on the server, then expose the service inside your tailnet only (not to the internet) with Tailscale's HTTPS proxy:
 
 ```powershell
 tailscale serve --bg 18765
 ```
 
-（如果在 `.env` 里改了端口，这里也要用同一个端口。）
+(Use the same port as in `.env`.)
 
-之后在 tailnet 内访问 `https://<机器名>.<你的 tailnet>.ts.net`（`tailscale serve status` 会显示完整地址）。同事加入的方式二选一：
+Colleagues then open `https://<machine>.<your-tailnet>.ts.net` (`tailscale serve status` shows the full address). Two ways to let them in:
 
-- **邀请进 tailnet**：Tailscale 管理后台 → Users → Invite users。
-- **只共享这台机器**：管理后台 → Machines → 这台机器 → Share。对方用自己的 Tailscale 账号接受后，只能访问这一台机器。
+- **Invite them to the tailnet**: admin console → Users → Invite users.
+- **Share only this machine**: admin console → Machines → this machine → Share. They accept with their own Tailscale account and can reach only this machine.
 
-同事需要在电脑或手机上装 Tailscale 并登录。停止共享：`tailscale serve --https=443 off`。
+Colleagues need Tailscale installed and logged in. Stop sharing with `tailscale serve --https=443 off`.
 
-### 备选：办公室局域网
+### Alternative: office LAN
 
-如果大家在同一个局域网，可以不用 Tailscale：在 `.env` 里设 `MEETNOTE_HOST=0.0.0.0` 后启动，同事访问 `http://<这台电脑的局域网 IP>:18765`。另外需要管理员在 Windows 防火墙放行这个端口（入站，专用网络）。局域网方式是 http 明文传输，建议同时设置访问码。
+On a shared LAN you can skip Tailscale: set `MEETNOTE_HOST=0.0.0.0` in `.env`, start the service, and colleagues open `http://<server LAN IP>:18765`. An administrator also needs to allow the port in Windows Firewall (inbound, private network). This is plain http, so set an access code too.
 
-## 自定义输出格式
+## Customizing the output
 
-两份总结的结构和要求写在提示词文件里，直接改即可（安装是 editable 模式，改完立刻生效）：
+The structure and rules of both summaries are in prompt files; edit them directly (the install is editable, so changes apply immediately):
 
-- `meetnote\prompts\synopsis.md`：全文梗概
-- `meetnote\prompts\highlights.md`：两页精华
+- `meetnote\prompts\synopsis.md`: full synopsis
+- `meetnote\prompts\highlights.md`: two-page highlights
 
-## 已知限制
+The prompts are written in Chinese; the output language is set separately by `--summary-lang`.
 
-- 说话人是自动区分的，会有少量错标（见“区分说话人”）；纪要里重要的“谁说的”请对照转写稿核实。
-- 8GB 显存只够同时跑一个转写进程：网页服务运行时再用命令行转写，会因显存不足变得非常慢。
-- 转写稿会发送给你配置的大模型服务商，涉及敏感会议内容时请注意。
-- 人名、机构名、中英混杂的术语容易识别错。用 `--terms` 能改善，两页精华的文末也会列出需要核对的名称。
-- 微信等应用的临时文件会被自动清理，建议先把录音另存出来再处理。
+## Known limitations
 
-## 许可与致谢
+- Speaker labels are automatic and some short lines get the wrong speaker; check important "who said what" against the transcript.
+- 8 GB of VRAM fits one transcription at a time: running the CLI while the web service transcribes makes both very slow.
+- Transcripts are sent to the LLM provider you configure; keep that in mind for sensitive meetings.
+- Names, organizations and mixed-language terms are often misheard. `--terms` helps, and the highlights end with a list of names to verify.
+- Temporary files from apps such as WeChat are cleaned up automatically; save recordings elsewhere before processing.
 
-代码以 [MIT](LICENSE) 许可发布。用到的模型和库：[faster-whisper](https://github.com/SYSTRAN/faster-whisper)（Whisper large-v3）、[sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)、[pyannote segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0)、[3D-Speaker CAM++](https://github.com/modelscope/3D-Speaker)。模型在第一次使用时下载，不随本仓库分发，各自遵循其许可。准确性改进与评测过程见 [docs/](docs/)。
+## License and credits
+
+Code under the [MIT](LICENSE) license. Built on [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (Whisper large-v3), [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), [pyannote segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0) and [3D-Speaker CAM++](https://github.com/modelscope/3D-Speaker). Models download on first use, are not distributed with this repository, and follow their own licenses.

@@ -26,8 +26,9 @@ body {
   font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 main { max-width: 900px; margin: 0 auto; padding: 32px 16px 64px; }
-header h1 { margin: 0; font-size: 24px; }
+header h1 { margin: 0; font-size: 24px; flex: 1; }
 header p { margin: 4px 0 24px; color: var(--muted); }
+button.lang { font-size: 13px; padding: 4px 10px; color: var(--muted); }
 .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 20px; }
 h2 { font-size: 16px; margin: 0 0 14px; }
 .drop {
@@ -94,60 +95,58 @@ button.primary:disabled { opacity: .5; cursor: default; }
 <body>
 <main>
   <header>
-    <h1>会议纪要助手</h1>
-    <p>上传会议录音，几分钟后得到转写稿、全文梗概和两页精华。</p>
+    <div class="row" style="align-items:flex-start">
+      <h1 data-i18n="appTitle">会议纪要助手</h1>
+      <button id="langBtn" class="lang" title="Language / 语言">English</button>
+    </div>
+    <p data-i18n="tagline">上传会议录音，几分钟后得到转写稿、全文梗概和两页精华。</p>
   </header>
 
   <section class="card hidden" id="gate">
-    <h2>请输入访问码</h2>
+    <h2 data-i18n="gateTitle">请输入访问码</h2>
     <div class="row">
-      <input type="password" id="code" placeholder="访问码" style="flex:1;min-width:180px">
-      <button class="primary" id="codeBtn">进入</button>
+      <input type="password" id="code" data-i18n-ph="codePh" placeholder="访问码" style="flex:1;min-width:180px">
+      <button class="primary" id="codeBtn" data-i18n="enter">进入</button>
     </div>
     <p class="error" id="codeErr"></p>
   </section>
 
   <section class="card hidden" id="upload">
-    <h2>新建纪要</h2>
+    <h2 data-i18n="newNotes">新建纪要</h2>
     <div class="drop" id="drop">
-      <strong id="dropTitle">点击选择或拖入录音文件</strong>
-      <span id="dropHint">支持 m4a、mp3、wav、mp4 等常见音视频格式</span>
+      <strong id="dropTitle"></strong>
+      <span id="dropHint"></span>
     </div>
     <input type="file" id="file" class="hidden" accept="audio/*,video/*">
-    <label for="context">会议背景（选填，帮助理解上下文和纠正术语）</label>
-    <textarea id="context" placeholder="例如：产品团队两位负责人讨论季度路线"></textarea>
-    <label for="terms">人名 / 术语（选填，逗号分隔，提高识别准确率）</label>
-    <input type="text" id="terms" placeholder="例如：Kubernetes, OKR, 张伟">
+    <label for="context" data-i18n="contextLabel">会议背景（选填，帮助理解上下文和纠正术语）</label>
+    <textarea id="context" data-i18n-ph="contextPh"></textarea>
+    <label for="terms" data-i18n="termsLabel">人名 / 术语（选填，逗号分隔，提高识别准确率）</label>
+    <input type="text" id="terms" data-i18n-ph="termsPh">
     <div class="row" style="gap:16px">
       <div style="flex:1;min-width:180px">
-        <label for="language">录音语言</label>
-        <select id="language"><option value="auto">自动识别</option></select>
+        <label for="language" data-i18n="recLang">录音语言</label>
+        <select id="language"><option value="auto" data-i18n="autoDetect">自动识别</option></select>
       </div>
       <div style="flex:1;min-width:180px">
-        <label for="summaryLang">纪要语言</label>
-        <select id="summaryLang"><option value="auto">跟录音语言一致</option></select>
+        <label for="summaryLang" data-i18n="sumLang">纪要语言</label>
+        <select id="summaryLang"><option value="auto" data-i18n="sameAsRec">跟录音语言一致</option></select>
       </div>
       <div style="flex:1;min-width:140px">
-        <label for="numSpeakers">参会人数</label>
-        <select id="numSpeakers" title="知道人数就选上，区分说话人会准很多">
-          <option value="0">自动估计</option>
-          <option value="1">1 人</option><option value="2">2 人</option><option value="3">3 人</option>
-          <option value="4">4 人</option><option value="5">5 人</option><option value="6">6 人</option>
-          <option value="7">7 人</option><option value="8">8 人</option><option value="10">10 人</option>
-        </select>
+        <label for="numSpeakers" data-i18n="headcount">参会人数</label>
+        <select id="numSpeakers" data-i18n-title="headcountTip"></select>
       </div>
     </div>
     <div class="bar hidden" id="upBar" style="margin-top:16px"><div></div></div>
     <p class="error" id="upErr"></p>
     <div class="row end">
       <span class="hint" id="upHint"></span>
-      <button class="primary" id="submit" disabled>开始生成</button>
+      <button class="primary" id="submit" data-i18n="start" disabled>开始生成</button>
     </div>
   </section>
 
   <section class="card hidden" id="list">
-    <div class="row"><h2 style="margin:0">我的任务</h2><span class="spacer"></span>
-      <span class="hint">只显示在这个浏览器里提交或打开过的任务</span></div>
+    <div class="row"><h2 style="margin:0" data-i18n="myJobs">我的任务</h2><span class="spacer"></span>
+      <span class="hint" data-i18n="myJobsHint">只显示在这个浏览器里提交或打开过的任务</span></div>
     <div id="jobs" style="margin-top:8px"></div>
   </section>
 
@@ -163,17 +162,17 @@ button.primary:disabled { opacity: .5; cursor: default; }
     </div>
     <p class="error" id="dErr"></p>
     <div class="row" id="dActions" style="margin-top:12px">
-      <button id="dZip" class="primary">下载全部</button>
-      <button id="dDownload">下载当前</button>
-      <button id="dPrint">打印 / 存 PDF</button>
-      <button id="dShare">复制分享链接</button>
-      <button id="dRetry" class="hidden">重新生成总结</button>
+      <button id="dZip" class="primary" data-i18n="dlAll">下载全部</button>
+      <button id="dDownload" data-i18n="dlCurrent">下载当前</button>
+      <button id="dPrint" data-i18n="print">打印 / 存 PDF</button>
+      <button id="dShare" data-i18n="share">复制分享链接</button>
+      <button id="dRetry" class="hidden" data-i18n="retry">重新生成总结</button>
     </div>
     <details id="dSpeakers" class="hidden" style="margin-top:14px">
-      <summary class="hint" style="cursor:pointer">说话人（自动区分）：<span id="dSpkList"></span> · 填写姓名</summary>
-      <p class="hint" style="margin:8px 0 4px">先在“转写稿”里看每个标签说了什么，再填上姓名。同一个人被分成两个标签时，填同一个名字即可。保存后会用新名字重新生成纪要。</p>
+      <summary class="hint" style="cursor:pointer"><span data-i18n="spkSummary">说话人（自动区分）</span>: <span id="dSpkList"></span> · <span data-i18n="spkName">填写姓名</span></summary>
+      <p class="hint" style="margin:8px 0 4px" data-i18n="spkHelp"></p>
       <div class="row" id="dSpkInputs"></div>
-      <div class="row end" style="margin-top:8px"><button id="dSpkSave">保存并重新生成纪要</button></div>
+      <div class="row end" style="margin-top:8px"><button id="dSpkSave" data-i18n="spkSave">保存并重新生成纪要</button></div>
     </details>
     <div class="tabs" id="dTabs"></div>
     <div class="doc" id="dDoc"></div>
@@ -181,11 +180,121 @@ button.primary:disabled { opacity: .5; cursor: default; }
 </main>
 
 <script>
-const TABS = [
-  ["highlights", "两页精华"], ["synopsis", "全文梗概"], ["notes", "要点笔记"], ["checks", "核查记录"],
-  ["transcript", "转写稿"], ["subtitles", "字幕 (srt)"],
+// ---------- i18n ----------
+const I18N = {
+  zh: {
+    appTitle: "会议纪要助手", tagline: "上传会议录音，几分钟后得到转写稿、全文梗概和两页精华。",
+    gateTitle: "请输入访问码", codePh: "访问码", enter: "进入",
+    newNotes: "新建纪要", dropTitle: "点击选择或拖入录音文件", dropHint: "支持 m4a、mp3、wav、mp4 等常见音视频格式",
+    fileChosen: "{size} MB · 点击可更换",
+    contextLabel: "会议背景（选填，帮助理解上下文和纠正术语）", contextPh: "例如：产品团队两位负责人讨论季度路线",
+    termsLabel: "人名 / 术语（选填，逗号分隔，提高识别准确率）", termsPh: "例如：Kubernetes, OKR, 张伟",
+    recLang: "录音语言", autoDetect: "自动识别", sumLang: "纪要语言", sameAsRec: "跟录音语言一致",
+    headcount: "参会人数", headcountTip: "知道人数就选上，区分说话人会准很多", estimate: "自动估计", people: "{n} 人",
+    start: "开始生成", uploading: "上传中 {pct}%", uploaded: "上传完成，正在排队…", uploadFailed: "上传失败",
+    netError: "网络错误，上传失败", wrongCode: "访问码错误，请重新输入", codeChanged: "访问码错误或已更改，请重新输入",
+    codeRotated: "访问码已更改，请重新输入",
+    myJobs: "我的任务", myJobsHint: "只显示在这个浏览器里提交或打开过的任务",
+    queued: "排队中", transcribing: "转写中", summarizing: "总结中", done: "已完成", failed: "失败",
+    ahead: "前面还有 {n} 个任务", soon: "即将开始", transcribingPct: "转写中 {pct}%", generating: "正在生成总结",
+    doneLine: "完成 · {dur}", hm: "{h} 小时 {m} 分", ms: "{m} 分 {s} 秒", perHour: " · 1 小时录音大约需要 3–5 分钟",
+    submitted: "提交于 {t}", durationIs: "时长 {d}", langIs: "语言 {l}", autoTag: "（自动识别）", notesIn: "纪要用 {l}",
+    contextIs: "背景：{c}", processFailed: "处理失败", notFound: "任务不存在或已过期",
+    dlAll: "下载全部", dlCurrent: "下载当前", print: "打印 / 存 PDF", share: "复制分享链接", copied: "已复制",
+    copyPrompt: "复制这个链接发给同事：", retry: "重新生成总结",
+    spkSummary: "说话人（自动区分）", spkName: "填写姓名",
+    spkHelp: "先在“转写稿”里看每个标签说了什么，再填上姓名。同一个人被分成两个标签时，填同一个名字即可。保存后会用新名字重新生成纪要。",
+    spkSave: "保存并重新生成纪要", spkPh: "姓名（不改就留空）", listSep: "、",
+    tabHighlights: "两页精华", tabSynopsis: "全文梗概", tabNotes: "要点笔记", tabChecks: "核查记录",
+    tabTranscript: "转写稿", tabSubtitles: "字幕 (srt)", loading: "加载中…", loadFailed: "加载失败：{e}",
+    langBtn: "English",
+  },
+  en: {
+    appTitle: "Meeting Notes",
+    tagline: "Upload a meeting recording; a few minutes later you get a transcript, a full synopsis and two-page highlights.",
+    gateTitle: "Enter the access code", codePh: "Access code", enter: "Enter",
+    newNotes: "New notes", dropTitle: "Click to choose, or drop a recording here",
+    dropHint: "m4a, mp3, wav, mp4 and other common audio/video formats",
+    fileChosen: "{size} MB · click to change",
+    contextLabel: "Meeting background (optional; helps with context and terms)",
+    contextPh: "e.g. Two product leads review the quarterly roadmap",
+    termsLabel: "Names / terms (optional, comma-separated; improves recognition)", termsPh: "e.g. Kubernetes, OKR, Alice Chen",
+    recLang: "Recording language", autoDetect: "Detect automatically", sumLang: "Notes language", sameAsRec: "Same as recording",
+    headcount: "Participants", headcountTip: "If you know the head count, set it: speaker separation gets much more reliable",
+    estimate: "Estimate", people: "{n}",
+    start: "Start", uploading: "Uploading {pct}%", uploaded: "Uploaded, waiting in queue…", uploadFailed: "Upload failed",
+    netError: "Network error, upload failed", wrongCode: "Wrong access code, please try again",
+    codeChanged: "Wrong or changed access code, please enter it again",
+    codeRotated: "The access code has changed, please enter it again",
+    myJobs: "My jobs", myJobsHint: "Only jobs submitted or opened in this browser",
+    queued: "Queued", transcribing: "Transcribing", summarizing: "Summarizing", done: "Done", failed: "Failed",
+    ahead: "{n} job(s) ahead", soon: "Starting soon", transcribingPct: "Transcribing {pct}%", generating: "Generating summaries",
+    doneLine: "Done · {dur}", hm: "{h} h {m} min", ms: "{m} min {s} s", perHour: " · an hour of audio takes about 3–5 minutes",
+    submitted: "Submitted {t}", durationIs: "Duration {d}", langIs: "Language {l}", autoTag: " (detected)", notesIn: "Notes in {l}",
+    contextIs: "Background: {c}", processFailed: "Processing failed", notFound: "Job not found or expired",
+    dlAll: "Download all", dlCurrent: "Download this", print: "Print / save PDF", share: "Copy share link", copied: "Copied",
+    copyPrompt: "Copy this link for your colleagues:", retry: "Regenerate summaries",
+    spkSummary: "Speakers (automatic)", spkName: "add names",
+    spkHelp: "Check in the transcript what each label said, then fill in names. If one person was split into two labels, give both the same name. Saving regenerates the notes with the new names.",
+    spkSave: "Save and regenerate notes", spkPh: "Name (leave empty to keep)", listSep: ", ",
+    tabHighlights: "Highlights", tabSynopsis: "Synopsis", tabNotes: "Section notes", tabChecks: "Fact-check log",
+    tabTranscript: "Transcript", tabSubtitles: "Subtitles (srt)", loading: "Loading…", loadFailed: "Failed to load: {e}",
+    langBtn: "中文",
+  },
+};
+// Status and error texts come from the server in Chinese; translate the known ones
+const docEn = (d) => ({ "全文梗概": "synopsis", "两页精华": "highlights" }[d] || d);
+const SERVER_EN = [
+  [/^排队中$/, "Queued"], [/^正在转写$/, "Transcribing"], [/^正在生成总结$/, "Generating summaries"], [/^完成$/, "Done"],
+  [/^服务重启，重新排队$/, "Requeued after a server restart"],
+  [/^正在逐段整理要点$/, "Extracting notes section by section"],
+  [/^正在撰写《(.+)》$/, (m, d) => `Writing the ${docEn(d)}`],
+  [/^正在核查《(.+)》$/, (m, d) => `Fact-checking the ${docEn(d)}`],
+  [/^正在修订《(.+)》$/, (m, d) => `Revising the ${docEn(d)}`],
+  [/^转写稿已生成，可稍后重新生成总结$/, "The transcript is ready; you can regenerate the summaries later"],
+  [/^转写失败：([\s\S]*)（请确认上传的是有效的音频文件）$/, "Transcription failed: $1 (check that the file is a valid audio file)"],
+  [/^总结失败：([\s\S]*)$/, "Summarizing failed: $1"],
+  [/^处理时发生内部错误，请联系管理员查看服务日志$/, "Internal error while processing; ask the administrator to check the service log"],
+  [/^任务不存在或已过期$/, "Job not found or expired"], [/^文件不存在$/, "File not found"],
+  [/^不支持的文件类型 (.+)，请上传音频或视频文件$/, "Unsupported file type $1; please upload an audio or video file"],
+  [/^不支持的语言：(.+)$/, "Unsupported language: $1"], [/^参会人数应在 1–20 之间$/, "Participants must be between 1 and 20"],
+  [/^文件超过 (\d+) MB$/, "File is larger than $1 MB"], [/^任务还在处理中$/, "The job is still running"],
+  [/^还没有转写稿，无法生成总结$/, "There is no transcript yet, so summaries can't be generated"],
+  [/^转写稿里没有说话人 (.+)（现有：(.*)）$/, "No speaker $1 in the transcript (existing: $2)"],
 ];
-const STATUS = { queued: "排队中", transcribing: "转写中", summarizing: "总结中", done: "已完成", failed: "失败" };
+
+let uiLang = (() => {
+  try { const v = localStorage.getItem("mn_ui_lang"); if (v === "zh" || v === "en") return v; } catch {}
+  return (navigator.language || "").toLowerCase().startsWith("zh") ? "zh" : "en";
+})();
+function t(key, vars = {}) {
+  const s = I18N[uiLang][key] ?? I18N.zh[key] ?? key;
+  return s.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? "");
+}
+function srv(text) {
+  if (!text || uiLang === "zh") return text;
+  for (const [re, out] of SERVER_EN) if (re.test(text)) return text.replace(re, out);
+  return text;
+}
+function applyStatic() {
+  document.documentElement.lang = uiLang === "zh" ? "zh-CN" : "en";
+  document.title = t("appTitle");
+  document.querySelectorAll("[data-i18n]").forEach((el) => (el.textContent = t(el.dataset.i18n)));
+  document.querySelectorAll("[data-i18n-ph]").forEach((el) => (el.placeholder = t(el.dataset.i18nPh)));
+  document.querySelectorAll("[data-i18n-title]").forEach((el) => (el.title = t(el.dataset.i18nTitle)));
+  $("langBtn").textContent = t("langBtn");
+  const sel = $("numSpeakers"), keep = sel.value || "0";
+  sel.innerHTML = "";
+  sel.add(new Option(t("estimate"), "0"));
+  for (const n of [1, 2, 3, 4, 5, 6, 7, 8, 10]) sel.add(new Option(t("people", { n }), String(n)));
+  sel.value = keep;
+  choose(chosen);
+}
+
+const TAB_KEYS = [
+  ["highlights", "tabHighlights"], ["synopsis", "tabSynopsis"], ["notes", "tabNotes"], ["checks", "tabChecks"],
+  ["transcript", "tabTranscript"], ["subtitles", "tabSubtitles"],
+];
 const ACTIVE = ["queued", "transcribing", "summarizing"];
 const $ = (id) => document.getElementById(id);
 
@@ -199,11 +308,11 @@ let current = null, currentTab = "highlights", docCache = {}, timer = null;
 
 async function api(path, opts = {}) {
   const res = await fetch(path, opts);
-  if (res.status === 401) { showGate("访问码错误或已更改，请重新输入"); throw new Error("unauthorized"); }
+  if (res.status === 401) { showGate(t("codeChanged")); throw new Error("unauthorized"); }
   if (!res.ok) {
     let msg = res.statusText;
     try { msg = (await res.json()).detail || msg; } catch {}
-    throw new Error(msg);
+    throw new Error(srv(msg));
   }
   return res;
 }
@@ -229,15 +338,15 @@ let chosen = null;
 function choose(file) {
   chosen = file;
   $("drop").classList.toggle("has-file", !!file);
-  $("dropTitle").textContent = file ? file.name : "点击选择或拖入录音文件";
-  $("dropHint").textContent = file ? `${(file.size / 1e6).toFixed(1)} MB · 点击可更换` : "支持 m4a、mp3、wav、mp4 等常见音视频格式";
+  $("dropTitle").textContent = file ? file.name : t("dropTitle");
+  $("dropHint").textContent = file ? t("fileChosen", { size: (file.size / 1e6).toFixed(1) }) : t("dropHint");
   $("submit").disabled = !file;
   $("upErr").textContent = "";
 }
 $("drop").onclick = () => $("file").click();
 $("file").onchange = () => choose($("file").files[0] || null);
-["dragenter", "dragover"].forEach((t) => $("drop").addEventListener(t, (e) => { e.preventDefault(); $("drop").classList.add("over"); }));
-["dragleave", "drop"].forEach((t) => $("drop").addEventListener(t, (e) => { e.preventDefault(); $("drop").classList.remove("over"); }));
+["dragenter", "dragover"].forEach((ev) => $("drop").addEventListener(ev, (e) => { e.preventDefault(); $("drop").classList.add("over"); }));
+["dragleave", "drop"].forEach((ev) => $("drop").addEventListener(ev, (e) => { e.preventDefault(); $("drop").classList.remove("over"); }));
 $("drop").addEventListener("drop", (e) => { if (e.dataTransfer.files[0]) choose(e.dataTransfer.files[0]); });
 
 $("submit").onclick = () => {
@@ -259,20 +368,20 @@ $("submit").onclick = () => {
     if (!e.lengthComputable) return;
     const pct = (e.loaded / e.total) * 100;
     $("upBar").firstElementChild.style.width = pct + "%";
-    $("upHint").textContent = pct < 100 ? `上传中 ${pct.toFixed(0)}%` : "上传完成，正在排队…";
+    $("upHint").textContent = pct < 100 ? t("uploading", { pct: pct.toFixed(0) }) : t("uploaded");
   };
   xhr.onload = () => {
     $("upBar").classList.add("hidden");
     $("upHint").textContent = "";
     let data = {};
     try { data = JSON.parse(xhr.responseText); } catch {}
-    if (xhr.status === 401) { showGate("访问码错误，请重新输入"); return; }
-    if (xhr.status !== 200) { $("upErr").textContent = data.detail || "上传失败"; $("submit").disabled = false; return; }
+    if (xhr.status === 401) { showGate(t("wrongCode")); return; }
+    if (xhr.status !== 200) { $("upErr").textContent = srv(data.detail) || t("uploadFailed"); $("submit").disabled = false; return; }
     remember(data);
     choose(null); $("file").value = ""; $("context").value = ""; $("terms").value = "";
     open(data.id);
   };
-  xhr.onerror = () => { $("upErr").textContent = "网络错误，上传失败"; $("submit").disabled = false; $("upBar").classList.add("hidden"); };
+  xhr.onerror = () => { $("upErr").textContent = t("netError"); $("submit").disabled = false; $("upBar").classList.add("hidden"); };
   xhr.send(fd);
 };
 
@@ -282,18 +391,20 @@ function remember(job) {
   if (!jobIds.includes(job.id)) { jobIds.unshift(job.id); store.set("mn_jobs", jobIds.slice(0, 50)); }
   renderList();
 }
-function fmtTime(t) { return t ? new Date(t * 1000).toLocaleString("zh-CN", { hour12: false }).slice(0, -3) : ""; }
+function fmtTime(ts) {
+  return ts ? new Date(ts * 1000).toLocaleString(uiLang === "zh" ? "zh-CN" : "en-GB", { hour12: false }).slice(0, -3) : "";
+}
 function fmtDur(s) {
   if (!s) return "";
   s = Math.round(s); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
-  return h ? `${h} 小时 ${m} 分` : `${m} 分 ${s % 60} 秒`;
+  return h ? t("hm", { h, m }) : t("ms", { m, s: s % 60 });
 }
 function statusLine(j) {
-  if (j.status === "queued") return j.jobs_ahead > 0 ? `前面还有 ${j.jobs_ahead} 个任务` : "即将开始";
-  if (j.status === "transcribing") return `转写中 ${Math.floor(j.progress || 0)}%`;
-  if (j.status === "summarizing") return j.message || "正在生成总结";
-  if (j.status === "failed") return j.error || "失败";
-  return `完成 · ${fmtDur(j.duration)}`;
+  if (j.status === "queued") return j.jobs_ahead > 0 ? t("ahead", { n: j.jobs_ahead }) : t("soon");
+  if (j.status === "transcribing") return t("transcribingPct", { pct: Math.floor(j.progress || 0) });
+  if (j.status === "summarizing") return srv(j.message) || t("generating");
+  if (j.status === "failed") return srv(j.error) || t("failed");
+  return t("doneLine", { dur: fmtDur(j.duration) });
 }
 function renderList() {
   const known = jobIds.filter((id) => jobs[id]);
@@ -303,7 +414,7 @@ function renderList() {
     const j = jobs[id];
     const el = document.createElement("div");
     el.className = "job" + (id === current ? " active-view" : "");
-    el.innerHTML = `<div class="row"><span class="name"></span><span class="spacer"></span><span class="pill ${j.status}">${STATUS[j.status]}</span></div>
+    el.innerHTML = `<div class="row"><span class="name"></span><span class="spacer"></span><span class="pill ${j.status}">${t(j.status)}</span></div>
       <div class="hint"><span class="when"></span> · <span class="line"></span></div>
       ${ACTIVE.includes(j.status) ? `<div class="bar"><div style="width:${j.status === "summarizing" ? 100 : j.progress || 0}%"></div></div>` : ""}`;
     el.querySelector(".name").textContent = j.filename;
@@ -340,7 +451,7 @@ async function poll() {
 async function open(id) {
   if (!jobs[id]) {
     const j = await refresh(id);
-    if (!j) { alert("任务不存在或已过期"); history.replaceState(null, "", location.pathname); return; }
+    if (!j) { alert(t("notFound")); history.replaceState(null, "", location.pathname); return; }
     remember(j);
   }
   if (current !== id) { current = id; docCache = {}; currentTab = "highlights"; }
@@ -356,34 +467,34 @@ function renderDetail() {
   $("detail").classList.remove("hidden");
   $("dTitle").textContent = j.filename;
   $("dPill").className = `pill ${j.status}`;
-  $("dPill").textContent = STATUS[j.status];
+  $("dPill").textContent = t(j.status);
   $("dMeta").textContent = [
-    `提交于 ${fmtTime(j.created_at)}`,
-    fmtDur(j.duration) && `时长 ${fmtDur(j.duration)}`,
-    j.detected_language && `语言 ${langName(j.detected_language)}${j.language === "auto" ? "（自动识别）" : ""}`,
-    j.summary_lang && j.summary_lang !== "auto" && `纪要用 ${langName(j.summary_lang)}`,
-    j.context && `背景：${j.context}`,
+    t("submitted", { t: fmtTime(j.created_at) }),
+    fmtDur(j.duration) && t("durationIs", { d: fmtDur(j.duration) }),
+    j.detected_language && t("langIs", { l: langName(j.detected_language) }) + (j.language === "auto" ? t("autoTag") : ""),
+    j.summary_lang && j.summary_lang !== "auto" && t("notesIn", { l: langName(j.summary_lang) }),
+    j.context && t("contextIs", { c: j.context }),
   ].filter(Boolean).join(" · ");
 
   const active = ACTIVE.includes(j.status);
   $("dProgress").classList.toggle("hidden", !active);
   if (active) {
     $("dProgress").querySelector(".bar > div").style.width = (j.status === "summarizing" ? 100 : j.progress || 0) + "%";
-    $("dMsg").textContent = statusLine(j) + (j.status === "transcribing" ? " · 1 小时录音大约需要 3–5 分钟" : "");
+    $("dMsg").textContent = statusLine(j) + (j.status === "transcribing" ? t("perHour") : "");
   }
-  $("dErr").textContent = j.status === "failed" ? [j.error || "处理失败", j.message].filter(Boolean).join("\n") : "";
+  $("dErr").textContent = j.status === "failed" ? [srv(j.error) || t("processFailed"), srv(j.message)].filter(Boolean).join("\n") : "";
   $("dRetry").classList.toggle("hidden", !(j.status === "failed" && j.files.includes("transcript")));
   $("dActions").classList.toggle("hidden", j.files.length === 0 && !active);
   ["dZip", "dDownload", "dPrint"].forEach((b) => $(b).classList.toggle("hidden", j.files.length === 0));
 
   renderSpeakers(j, active);
 
-  const tabs = TABS.filter(([k]) => j.files.includes(k));
+  const tabs = TAB_KEYS.filter(([k]) => j.files.includes(k));
   if (!tabs.some(([k]) => k === currentTab) && tabs.length) currentTab = tabs[0][0];
   $("dTabs").innerHTML = "";
   for (const [k, label] of tabs) {
     const b = document.createElement("button");
-    b.textContent = label;
+    b.textContent = t(label);
     b.className = k === currentTab ? "on" : "";
     b.onclick = () => { currentTab = k; renderDetail(); };
     $("dTabs").appendChild(b);
@@ -394,9 +505,12 @@ function renderDetail() {
 function renderSpeakers(j, active) {
   const spk = j.speakers || [];
   $("dSpeakers").classList.toggle("hidden", spk.length === 0 || active);
-  $("dSpkList").textContent = spk.join("、");
+  $("dSpkList").textContent = spk.join(t("listSep"));
   const box = $("dSpkInputs");
-  if (box.dataset.for === current + spk.join("|")) return;  // keep what the user is typing
+  if (box.dataset.for === current + spk.join("|")) {  // keep what the user is typing
+    box.querySelectorAll("input").forEach((i) => (i.placeholder = t("spkPh")));
+    return;
+  }
   box.dataset.for = current + spk.join("|");
   box.innerHTML = "";
   for (const label of spk) {
@@ -405,7 +519,7 @@ function renderSpeakers(j, active) {
     const l = document.createElement("label");
     l.textContent = label;
     const input = document.createElement("input");
-    input.type = "text"; input.dataset.label = label; input.placeholder = "姓名（不改就留空）";
+    input.type = "text"; input.dataset.label = label; input.placeholder = t("spkPh");
     wrap.append(l, input);
     box.appendChild(wrap);
   }
@@ -433,11 +547,11 @@ async function renderDoc(key) {
   if (!(key in docCache)) {
     docCache[key] = null;
     try { docCache[key] = await (await api(`/api/jobs/${current}/files/${key}?inline=1`)).text(); }
-    catch (e) { delete docCache[key]; doc.textContent = "加载失败：" + e.message; return; }
+    catch (e) { delete docCache[key]; doc.textContent = t("loadFailed", { e: e.message }); return; }
   }
   if (key !== currentTab) return;
   const text = docCache[key];
-  if (text === null) { doc.textContent = "加载中…"; return; }
+  if (text === null) { doc.textContent = t("loading"); return; }
   const plain = key === "transcript" || key === "subtitles";
   if (plain || !window.marked || !window.DOMPurify) {
     doc.innerHTML = "<pre></pre>";
@@ -452,14 +566,22 @@ $("dDownload").onclick = () => { location.href = `/api/jobs/${current}/files/${c
 $("dPrint").onclick = () => window.print();
 $("dShare").onclick = async () => {
   const url = `${location.origin}/#job=${current}`;
-  try { await navigator.clipboard.writeText(url); $("dShare").textContent = "已复制"; }
-  catch { prompt("复制这个链接发给同事：", url); }
-  setTimeout(() => ($("dShare").textContent = "复制分享链接"), 2000);
+  try { await navigator.clipboard.writeText(url); $("dShare").textContent = t("copied"); }
+  catch { prompt(t("copyPrompt"), url); }
+  setTimeout(() => ($("dShare").textContent = t("share")), 2000);
 };
 $("dRetry").onclick = async () => {
   try { jobs[current] = await (await api(`/api/jobs/${current}/resummarize`, { method: "POST" })).json(); }
   catch (e) { alert(e.message); return; }
   renderDetail(); renderList(); poll();
+};
+
+$("langBtn").onclick = () => {
+  uiLang = uiLang === "zh" ? "en" : "zh";
+  try { localStorage.setItem("mn_ui_lang", uiLang); } catch {}
+  applyStatic();
+  renderList();
+  if (current && jobs[current]) renderDetail();
 };
 
 // A share link opened in a tab that already shows this page only changes the hash
@@ -488,6 +610,7 @@ async function start() {
   if (m) open(m[1]); else poll();
 }
 
+applyStatic();
 (async () => {
   let cfg = {};
   try { cfg = await (await fetch("/api/config")).json(); } catch {}
@@ -496,7 +619,7 @@ async function start() {
   if (cfg.access_code_required) {
     const hadCode = document.cookie.includes("mn_code=");
     const res = await fetch("/api/jobs/" + "0".repeat(32));
-    if (res.status === 401) { showGate(hadCode ? "访问码已更改，请重新输入" : ""); return; }
+    if (res.status === 401) { showGate(hadCode ? t("codeRotated") : ""); return; }
   }
   start();
 })();
