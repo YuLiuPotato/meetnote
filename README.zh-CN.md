@@ -27,6 +27,8 @@ API key、端口、访问码都写在 `meetnote\.env` 里（安装时从 `.env.e
 DEEPSEEK_API_KEY=sk-你的key
 ```
 
+界面语言（提示信息、`--help`、评估报告和输出文件名）默认跟随系统显示语言；在 `.env` 里设 `MEETNOTE_LANG=zh` 或 `MEETNOTE_LANG=en` 可以指定。它和纪要用什么语言写无关。
+
 `.env` 的查找顺序：环境变量 `MEETNOTE_ENV_FILE` 指定的文件 → 当前目录的 `.env` → `meetnote\.env`。已经存在的同名环境变量优先于文件。`.env` 已在 `.gitignore` 里，不要发给别人。
 
 **总结需要配置一个大模型（`--backend auto` 会按下表顺序选第一个配置好的）：**
@@ -59,7 +61,7 @@ meetnote rename 周会_纪要 S1=张三 S2=李四
 meetnote summarize 周会_纪要
 ```
 
-输出默认放在当前目录的 `<文件名>_纪要\` 下：
+输出默认放在当前目录的 `<文件名>_纪要\` 下（界面语言为中文时；英文时是 `<文件名>_notes\`，文件名为 `transcript.txt`、`highlights.md` 等）。已有文件的目录会沿用原来的命名。
 
 ```
 周会_纪要\

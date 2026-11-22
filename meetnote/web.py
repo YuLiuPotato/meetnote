@@ -29,8 +29,9 @@ from urllib.parse import quote
 from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response
 
-from .pipeline import META, SUBTITLES, TRANSCRIPT, rename_speakers, summarize_dir, transcribe_to_dir
-from .summarize import CHECK_LOG, NOTES_FILE, OUTPUTS, SummarizeError, resolve_backend
+from .i18n import FILE_NAMES, find_file, tr
+from .pipeline import rename_speakers, summarize_dir, transcribe_to_dir
+from .summarize import SummarizeError, resolve_backend
 from .transcribe import LANGUAGE_NAMES, log
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -41,15 +42,10 @@ AUDIO_EXTS = {
 }
 MAX_UPLOAD_MB = 2048
 
-# download key → file name inside the job directory
-FILES = {
-    "highlights": OUTPUTS["highlights"][1],
-    "synopsis": OUTPUTS["synopsis"][1],
-    "notes": NOTES_FILE,
-    "checks": CHECK_LOG,
-    "transcript": TRANSCRIPT,
-    "subtitles": SUBTITLES,
-}
+# Files the page can show or download, in tab order. Each job's files are named in the
+# server's interface language; find_file() accepts either language.
+FILES = ("highlights", "synopsis", "notes", "checks", "transcript", "subtitles")
+assert set(FILES) <= set(FILE_NAMES)
 ACTIVE = ("queued", "transcribing", "summarizing")
 
 
@@ -66,7 +62,7 @@ class JobStore:
                 job = json.loads(status.read_text(encoding="utf-8"))
                 self.jobs[job["id"]] = job
             except (OSError, ValueError, KeyError):
-                log(f"跳过损坏的任务：{status.parent}")
+                log(tr(f"跳过损坏的任务：{status.parent}", f"Skipping a corrupt job: {status.parent}"))
 
     def dir(self, jid: str) -> Path:
         return self.root / jid
@@ -113,7 +109,7 @@ class JobStore:
         for job in sorted(self.jobs.values(), key=lambda j: j["created_at"]):
             if job["status"] not in ACTIVE:
                 continue
-            has_transcript = (self.dir(job["id"]) / TRANSCRIPT).exists()
+            has_transcript = find_file(self.dir(job["id"]), "transcript") is not None
             if job["status"] == "summarizing" and has_transcript:
                 self.update(job["id"], status="queued", mode="summarize", message="服务重启，重新排队")
             else:
@@ -128,7 +124,7 @@ class JobStore:
                 self.jobs.pop(jid)
         for jid in stale:
             shutil.rmtree(self.dir(jid), ignore_errors=True)
-            log(f"已删除过期任务 {jid}")
+            log(tr(f"已删除过期任务 {jid}", f"Deleted expired job {jid}"))
 
 
 class Worker:
@@ -210,7 +206,7 @@ def create_app(store: JobStore, access_code: str | None):
             "message", "error", "context", "terms", "duration",
             "language", "detected_language", "summary_lang", "num_speakers", "speakers",
         )}
-        out["files"] = [key for key, name in FILES.items() if (job_dir / name).exists()]
+        out["files"] = [key for key in FILES if find_file(job_dir, key)]
         out["jobs_ahead"] = store.jobs_ahead(job["id"]) if job["status"] == "queued" else 0
         return out
 
@@ -264,7 +260,7 @@ def create_app(store: JobStore, access_code: str | None):
         }
         store.create(job)
         store.enqueue(jid)
-        log(f"新任务 {jid}：{filename}（{size / 1e6:.1f} MB）")
+        log(tr(f"新任务 {jid}：{filename}（{size / 1e6:.1f} MB）", f"New job {jid}: {filename} ({size / 1e6:.1f} MB)"))
         return public(store.get(jid))
 
     @app.get("/api/jobs/{jid}")
@@ -276,7 +272,7 @@ def create_app(store: JobStore, access_code: str | None):
         job = require_job(jid)
         if job["status"] in ACTIVE:
             raise HTTPException(409, "任务还在处理中")
-        if not (store.dir(jid) / TRANSCRIPT).exists():
+        if not find_file(store.dir(jid), "transcript"):
             raise HTTPException(409, "还没有转写稿，无法生成总结")
         store.update(jid, status="queued", mode="summarize", message="排队中", error=None)
         store.enqueue(jid)
@@ -302,21 +298,21 @@ def create_app(store: JobStore, access_code: str | None):
     @app.get("/api/jobs/{jid}/files/{key}")
     def get_file(jid: str, key: str, inline: bool = False):
         job = require_job(jid)
-        if key not in FILES or not (path := store.dir(jid) / FILES[key]).exists():
+        if key not in FILES or not (path := find_file(store.dir(jid), key)):
             raise HTTPException(404, "文件不存在")
         if inline:
             return PlainTextResponse(path.read_text(encoding="utf-8"))
-        return FileResponse(path, filename=download_name(job, FILES[key]), media_type="text/plain; charset=utf-8")
+        return FileResponse(path, filename=download_name(job, path.name), media_type="text/plain; charset=utf-8")
 
     @app.get("/api/jobs/{jid}/zip")
     def get_zip(jid: str):
         job = require_job(jid)
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-            for name in FILES.values():
-                if (path := store.dir(jid) / name).exists():
-                    z.write(path, download_name(job, name))
-        zip_name = quote(f"{Path(job['filename']).stem}_纪要.zip")
+            for key in FILES:
+                if path := find_file(store.dir(jid), key):
+                    z.write(path, download_name(job, path.name))
+        zip_name = quote(f"{Path(job['filename']).stem}{tr('_纪要', '_notes')}.zip")
         return Response(buf.getvalue(), media_type="application/zip",
                         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{zip_name}"})
 
@@ -341,9 +337,10 @@ def serve(host: str, port: int, data_dir: Path, keep_days: int, keep_audio: bool
     import uvicorn
 
     try:
-        log(f"总结后端：{resolve_backend(backend)}")
+        log(tr(f"总结后端：{resolve_backend(backend)}", f"Summary backend: {resolve_backend(backend)}"))
     except SummarizeError as e:
-        log(f"警告：{e}\n（服务照常启动，但总结会失败，直到配置好为止）")
+        log(tr(f"警告：{e}\n（服务照常启动，但总结会失败，直到配置好为止）",
+               f"Warning: {e}\n(The service starts anyway, but summaries will fail until this is configured.)"))
 
     store = JobStore(data_dir)
     store.expire(keep_days)
@@ -360,9 +357,11 @@ def serve(host: str, port: int, data_dir: Path, keep_days: int, keep_audio: bool
     store.resume_unfinished()
 
     access_code = os.environ.get("MEETNOTE_ACCESS_CODE") or None
-    log(f"数据目录：{data_dir}")
-    log("访问码：" + ("已启用" if access_code else "未启用（在 .env 里设 MEETNOTE_ACCESS_CODE 可开启）"))
-    log("访问地址：\n  " + "\n  ".join(_addresses(host, port)))
+    log(tr(f"数据目录：{data_dir}", f"Data folder: {data_dir}"))
+    log(tr("访问码：" + ("已启用" if access_code else "未启用（在 .env 里设 MEETNOTE_ACCESS_CODE 可开启）"),
+           "Access code: " + ("on" if access_code else "off (set MEETNOTE_ACCESS_CODE in .env to turn it on)")))
+    log(tr("访问地址：", "Open at:") + "\n  " + "\n  ".join(_addresses(host, port)))
     if host in ("127.0.0.1", "localhost"):
-        log(f"（只监听本机；同事通过 `tailscale serve --bg {port}` 访问）")
+        log(tr(f"（只监听本机；同事通过 `tailscale serve --bg {port}` 访问）",
+               f"(Listening on this machine only; colleagues connect via `tailscale serve --bg {port}`)"))
     uvicorn.run(create_app(store, access_code), host=host, port=port, log_level="warning")

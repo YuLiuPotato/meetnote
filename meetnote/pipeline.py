@@ -1,7 +1,7 @@
 """Directory-level steps shared by the CLI and the web server.
 
-A meeting directory holds 转写稿.txt / 转写稿.srt / meta.json, and the summaries
-written next to them.
+A meeting directory holds the transcript (.txt and .srt), meta.json, and the summaries
+written next to them; file names follow the interface language (see i18n.FILE_NAMES).
 """
 
 from __future__ import annotations
@@ -12,11 +12,10 @@ import re
 from pathlib import Path
 from typing import Callable
 
+from .i18n import file_path, tr
 from .summarize import summarize
 from .transcribe import fmt_ts, language_name, transcribe, write_transcript
 
-TRANSCRIPT = "转写稿.txt"
-SUBTITLES = "转写稿.srt"
 META = "meta.json"
 
 
@@ -38,7 +37,7 @@ def transcribe_to_dir(
         device=device, terms=terms, on_progress=on_progress,
         diarization=diarization, num_speakers=num_speakers,
     )
-    write_transcript(segments, out_dir / TRANSCRIPT, out_dir / SUBTITLES)
+    write_transcript(segments, file_path(out_dir, "transcript"), file_path(out_dir, "subtitles"))
     meta = {
         "source": source_name or audio.name,
         "duration": duration,
@@ -70,7 +69,8 @@ def rename_speakers(out_dir: Path, names: dict[str, str]) -> list[str]:
     for old, new in names.items():
         new = re.sub(r"[\s:：]+", " ", str(new)).strip()[:40]
         if old not in current:
-            raise ValueError(f"转写稿里没有说话人 {old}（现有：{', '.join(current) or '无'}）")
+            raise ValueError(tr(f"转写稿里没有说话人 {old}（现有：{', '.join(current) or '无'}）",
+                                f"No speaker {old} in the transcript (existing: {', '.join(current) or 'none'})"))
         if new and new != old:
             mapping[old] = new
     if not mapping:
@@ -78,11 +78,11 @@ def rename_speakers(out_dir: Path, names: dict[str, str]) -> list[str]:
     labels = sorted(current, key=len, reverse=True)
     alt = "|".join(re.escape(x) for x in labels)
     patterns = {
-        TRANSCRIPT: re.compile(rf"^(\[[\d:]+\] )({alt})(: )", re.M),
-        SUBTITLES: re.compile(rf"^()({alt})(: )", re.M),
+        "transcript": re.compile(rf"^(\[[\d:]+\] )({alt})(: )", re.M),
+        "subtitles": re.compile(rf"^()({alt})(: )", re.M),
     }
-    for name, pattern in patterns.items():
-        path = out_dir / name
+    for key, pattern in patterns.items():
+        path = file_path(out_dir, key)
         if path.exists():
             text = path.read_text(encoding="utf-8")
             text = pattern.sub(lambda m: m.group(1) + mapping.get(m.group(2), m.group(2)) + m.group(3), text)
@@ -109,7 +109,7 @@ def summarize_dir(
 ) -> list[Path]:
     """`summary_lang`: "auto" follows the recording's language; otherwise a code ("zh", "en")
     or a language name the model understands."""
-    txt = transcript or out_dir / TRANSCRIPT
+    txt = transcript or file_path(out_dir, "transcript")
     meta_path = out_dir / META
     meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
     source_lang = meta.get("language")

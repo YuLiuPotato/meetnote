@@ -1,3 +1,3 @@
-"""meetnote: 会议录音转写与总结。"""
+"""meetnote: meeting recording → transcript, synopsis and highlights."""
 
 __version__ = "0.1.0"

@@ -1,4 +1,4 @@
-"""Transcript → 全文梗概 / 两页精华, via DeepSeek (or any OpenAI-compatible API) or Claude.
+"""Transcript → synopsis / highlights, via DeepSeek (or any OpenAI-compatible API) or Claude.
 
 The default "grounded" pipeline exists because a single pass over a long transcript
 mixes things up: opinions about two products discussed one after another end up on
@@ -24,6 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable
 
+from .i18n import doc_title, file_path, show_label, tr
 from .transcribe import log
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
@@ -35,13 +36,9 @@ DEEPSEEK_MODEL = "deepseek-chat"
 BACKENDS = ("auto", "deepseek", "openai", "claude-cli", "claude-api")
 PIPELINES = ("grounded", "simple")
 
-# name → (prompt file, output file)
-OUTPUTS = {
-    "synopsis": ("synopsis.md", "全文梗概.md"),
-    "highlights": ("highlights.md", "两页精华.md"),
-}
-NOTES_FILE = "要点笔记.md"
-CHECK_LOG = "核查记录.md"
+# document → prompt file (output file names: see i18n.FILE_NAMES)
+PROMPT_FILES = {"synopsis": "synopsis.md", "highlights": "highlights.md"}
+DOC_TITLES_ZH = {"synopsis": "全文梗概", "highlights": "两页精华"}
 
 # Temperatures for OpenAI-compatible backends (DeepSeek defaults to 1.0, which drifts).
 # Claude backends ignore these.
@@ -101,13 +98,18 @@ def resolve_backend(backend: str) -> str:
         return "claude-cli"
     if has_api_credentials():
         return "claude-api"
-    raise SummarizeError(
+    raise SummarizeError(tr(
         "没有配置可用的大模型，在 meetnote\\.env 里任选其一填写：\n"
         "  - DeepSeek：DEEPSEEK_API_KEY（推荐）\n"
         "  - 其他 OpenAI 兼容服务：MEETNOTE_BASE_URL、MEETNOTE_API_KEY、MEETNOTE_MODEL\n"
         "  - Claude：ANTHROPIC_API_KEY，或登录 Claude Code CLI\n"
-        "转写稿已保存，配置好之后用 `meetnote summarize <输出目录>` 继续。"
-    )
+        "转写稿已保存，配置好之后用 `meetnote summarize <输出目录>` 继续。",
+        "No LLM is configured. Set one of these in meetnote\\.env:\n"
+        "  - DeepSeek: DEEPSEEK_API_KEY (recommended)\n"
+        "  - Any OpenAI-compatible service: MEETNOTE_BASE_URL, MEETNOTE_API_KEY, MEETNOTE_MODEL\n"
+        "  - Claude: ANTHROPIC_API_KEY, or a logged-in Claude Code CLI\n"
+        "The transcript is saved; continue with `meetnote summarize <output folder>` once configured.",
+    ))
 
 
 def _run_openai_compatible(system: str, user: str, model: str, base_url: str, api_key: str,
@@ -130,24 +132,27 @@ def _run_openai_compatible(system: str, user: str, model: str, base_url: str, ap
             **kwargs,
         )
     except openai.AuthenticationError as e:
-        raise SummarizeError(f"API key 无效（{base_url}）：{e}") from e
+        raise SummarizeError(tr(f"API key 无效（{base_url}）：{e}", f"Invalid API key ({base_url}): {e}")) from e
     except openai.NotFoundError as e:
-        raise SummarizeError(f"模型 {model} 不存在，可用 --model 换一个：{e}") from e
+        raise SummarizeError(tr(f"模型 {model} 不存在，可用 --model 换一个：{e}",
+                                f"Model {model} not found; pick another with --model: {e}")) from e
     except openai.APIError as e:
-        raise SummarizeError(f"调用 {base_url} 失败：{e}") from e
+        raise SummarizeError(tr(f"调用 {base_url} 失败：{e}", f"Request to {base_url} failed: {e}")) from e
     choice = resp.choices[0]
     if choice.finish_reason == "length":
-        log("警告：输出达到长度上限，结果可能不完整")
+        log(tr("警告：输出达到长度上限，结果可能不完整", "Warning: output hit the length limit and may be incomplete"))
     text = (choice.message.content or "").strip()
     if not text:
-        raise SummarizeError(f"API 返回为空（finish_reason={choice.finish_reason}）")
+        raise SummarizeError(tr(f"API 返回为空（finish_reason={choice.finish_reason}）",
+                                f"Empty API response (finish_reason={choice.finish_reason})"))
     return text
 
 
 def _run_deepseek(system: str, user: str, model: str | None, temperature: float | None = None) -> str:
     key = os.environ.get("DEEPSEEK_API_KEY")
     if not key:
-        raise SummarizeError("没有配置 DEEPSEEK_API_KEY（填在 meetnote\\.env 里）")
+        raise SummarizeError(tr("没有配置 DEEPSEEK_API_KEY（填在 meetnote\\.env 里）",
+                                "DEEPSEEK_API_KEY is not set (put it in meetnote\\.env)"))
     return _run_openai_compatible(system, user, model or DEEPSEEK_MODEL, DEEPSEEK_BASE_URL, key, temperature)
 
 
@@ -155,14 +160,16 @@ def _run_openai(system: str, user: str, model: str | None, temperature: float | 
     base_url, key = os.environ.get("MEETNOTE_BASE_URL"), os.environ.get("MEETNOTE_API_KEY")
     model = model or os.environ.get("MEETNOTE_MODEL")
     if not (base_url and key and model):
-        raise SummarizeError("openai 后端需要 MEETNOTE_BASE_URL、MEETNOTE_API_KEY，以及 --model 或 MEETNOTE_MODEL")
+        raise SummarizeError(tr("openai 后端需要 MEETNOTE_BASE_URL、MEETNOTE_API_KEY，以及 --model 或 MEETNOTE_MODEL",
+                                "The openai backend needs MEETNOTE_BASE_URL, MEETNOTE_API_KEY, and --model or MEETNOTE_MODEL"))
     return _run_openai_compatible(system, user, model, base_url, key, temperature)
 
 
 def _run_cli(system: str, user: str, model: str | None, temperature: float | None = None) -> str:
     exe = find_claude_cli()
     if not exe:
-        raise SummarizeError("找不到 claude 命令（可用 MEETNOTE_CLAUDE 环境变量指定路径）")
+        raise SummarizeError(tr("找不到 claude 命令（可用 MEETNOTE_CLAUDE 环境变量指定路径）",
+                                "claude command not found (set its path with MEETNOTE_CLAUDE)"))
     # The system prompt goes through a file: a multi-line argument would be mangled
     # when `claude` is an npm-installed claude.cmd run via cmd.exe.
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".md", delete=False) as f:
@@ -185,7 +192,8 @@ def _run_cli(system: str, user: str, model: str | None, temperature: float | Non
     out = (proc.stdout or "").strip()
     if proc.returncode != 0 or not out:
         detail = (proc.stderr or proc.stdout or "").strip()
-        raise SummarizeError(f"claude CLI 调用失败（exit {proc.returncode}）：{detail}")
+        raise SummarizeError(tr(f"claude CLI 调用失败（exit {proc.returncode}）：{detail}",
+                                f"claude CLI failed (exit {proc.returncode}): {detail}"))
     return out
 
 
@@ -205,12 +213,14 @@ def _run_api(system: str, user: str, model: str | None, temperature: float | Non
     ) as stream:
         msg = stream.get_final_message()
     if msg.stop_reason == "refusal":
-        raise SummarizeError(f"模型拒绝了请求：{getattr(msg, 'stop_details', None)}")
+        raise SummarizeError(tr(f"模型拒绝了请求：{getattr(msg, 'stop_details', None)}",
+                                f"The model refused the request: {getattr(msg, 'stop_details', None)}"))
     text = "".join(b.text for b in msg.content if b.type == "text").strip()
     if msg.stop_reason == "max_tokens":
-        log("警告：输出达到 max_tokens 上限，结果可能不完整")
+        log(tr("警告：输出达到 max_tokens 上限，结果可能不完整", "Warning: output hit max_tokens and may be incomplete"))
     if not text:
-        raise SummarizeError(f"API 返回为空（stop_reason={msg.stop_reason}）")
+        raise SummarizeError(tr(f"API 返回为空（stop_reason={msg.stop_reason}）",
+                                f"Empty API response (stop_reason={msg.stop_reason})"))
     return text
 
 
@@ -270,7 +280,7 @@ def extract_notes(runner, model, transcript: str, context: str | None, meta: str
         parts.append(f"## 需要整理的片段（第 {i + 1}/{len(pairs)} 段）\n<chunk>\n{chunk}\n</chunk>")
         return runner(system, "\n\n".join(parts), model, temperature=T_EXTRACT)
 
-    log(f"  逐段抽取要点（{len(pairs)} 段）…")
+    log(tr(f"  逐段抽取要点（{len(pairs)} 段）…", f"  Extracting notes ({len(pairs)} sections)…"))
     with ThreadPoolExecutor(max_workers=4) as pool:
         notes = list(pool.map(one, range(len(pairs))))
 
@@ -302,12 +312,12 @@ def check_document(runner, model, document: str, base_user: str) -> list[dict]:
         try:
             raw = runner(_prompt("verify.md"), user, model, temperature=T_CHECK)
         except SummarizeError as e:
-            log(f"  警告：有一段核查失败（{e}），已跳过")
+            log(tr(f"  警告：有一段核查失败（{e}），已跳过", f"  Warning: one check failed ({e}); skipped"))
             return []
         try:
             data = parse_json(raw)
         except ValueError:
-            log("  警告：有一段核查结果不是合法 JSON，已跳过")
+            log(tr("  警告：有一段核查结果不是合法 JSON，已跳过", "  Warning: one check returned invalid JSON; skipped"))
             return []
         issues = data.get("issues", []) if isinstance(data, dict) else data
         return [i for i in issues if isinstance(i, dict) and i.get("text")]
@@ -329,10 +339,12 @@ def revise_document(runner, model, system: str, user: str, draft: str, issues: l
 
 def _format_issues(title: str, issues: list[dict]) -> str:
     if not issues:
-        return f"## {title}\n\n未发现问题。\n"
-    rows = [f"## {title}（{len(issues)} 处）\n"]
+        return f"## {title}\n\n{tr('未发现问题。', 'No problems found.')}\n"
+    rows = [tr(f"## {title}（{len(issues)} 处）\n", f"## {title} ({len(issues)})\n")]
+    evidence, fix = tr("依据", "Evidence"), tr("修改", "Fix")
     for i in issues:
-        rows.append(f"- **{i.get('type', '?')}**：{i.get('text')}\n  - 依据：{i.get('evidence', '')}\n  - 修改：{i.get('fix', '')}")
+        rows.append(f"- **{show_label(i.get('type', '?'))}**: {i.get('text')}\n  - {evidence}: {i.get('evidence', '')}\n"
+                    f"  - {fix}: {i.get('fix', '')}")
     return "\n".join(rows) + "\n"
 
 
@@ -353,43 +365,43 @@ def summarize(
     base_user = build_user_message(transcript, context, meta)
     faithfulness = _prompt("faithfulness.md")
 
-    def step(msg: str) -> None:
-        log(f"{msg}（{backend}）…")
+    def step(zh: str, en: str) -> None:
+        log(tr(f"{zh}（{backend}）…", f"{en} ({backend})…"))
         if on_step:
-            on_step(msg)
+            on_step(zh)  # the web page translates these itself, so they stay in Chinese
 
     notes = ""
     if pipeline == "grounded":
-        step("逐段整理要点")
+        step("逐段整理要点", "Extracting notes section by section")
         notes = extract_notes(runner, model, transcript, context, meta, output_language)
-        (out_dir / NOTES_FILE).write_text(notes + "\n", encoding="utf-8")
+        file_path(out_dir, "notes").write_text(notes + "\n", encoding="utf-8")
 
     written, check_log = [], []
     for name in which:
-        prompt_file, out_name = OUTPUTS[name]
-        title = out_name.removesuffix(".md")
-        system = _prompt(prompt_file) + "\n\n" + faithfulness + language_rule(output_language)
+        title, title_zh = doc_title(name), DOC_TITLES_ZH[name]
+        system = _prompt(PROMPT_FILES[name]) + "\n\n" + faithfulness + language_rule(output_language)
         user = base_user
         if notes:
             user += f"\n\n## 分段要点笔记（从转写稿逐段整理，带时间戳；撰写时以此为主要依据）\n<notes>\n{notes}\n</notes>"
 
-        step(f"撰写《{title}》")
+        step(f"撰写《{title_zh}》", f"Writing the {title.lower()}")
         text = runner(system, user, model, temperature=T_WRITE)
 
         if pipeline == "grounded":
-            step(f"核查《{title}》")
+            step(f"核查《{title_zh}》", f"Fact-checking the {title.lower()}")
             issues = check_document(runner, model, text, base_user)
-            log(f"  发现 {len(issues)} 处问题")
+            log(tr(f"  发现 {len(issues)} 处问题", f"  Found {len(issues)} problem(s)"))
             check_log.append(_format_issues(title, issues))
             if issues:
-                step(f"修订《{title}》")
+                step(f"修订《{title_zh}》", f"Revising the {title.lower()}")
                 text = revise_document(runner, model, system, user, text, issues)
 
-        out_path = out_dir / out_name
+        out_path = file_path(out_dir, name)
         out_path.write_text(text + "\n", encoding="utf-8")
         log(f"  → {out_path}")
         written.append(out_path)
 
     if check_log:
-        (out_dir / CHECK_LOG).write_text("# 核查记录\n\n" + "\n".join(check_log), encoding="utf-8")
+        file_path(out_dir, "checks").write_text(
+            tr("# 核查记录\n\n", "# Fact-check log\n\n") + "\n".join(check_log), encoding="utf-8")
     return written

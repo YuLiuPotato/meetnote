@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from .i18n import tr
+
 
 def _register_cuda_dlls() -> None:
     """Make pip-installed CUDA libs (nvidia-cublas / nvidia-cudnn) loadable on Windows."""
@@ -54,7 +56,7 @@ def _decode_audio(path: Path, sr: int = 16000):
         for out in resampler.resample(None):
             chunks.append(out.to_ndarray().reshape(-1))
     if not chunks:
-        raise RuntimeError(f"没有从 {path} 解码出音频")
+        raise RuntimeError(tr(f"没有从 {path} 解码出音频", f"No audio could be decoded from {path}"))
     return np.concatenate(chunks).astype(np.float32) / 32768.0
 
 
@@ -77,7 +79,7 @@ def _load_model(model_name: str, device: str):
     device, compute_type = _pick_device(device)
     key = (model_name, device)
     if key not in _models:
-        log(f"加载 Whisper {model_name}（{device}/{compute_type}）…")
+        log(tr(f"加载 Whisper {model_name}（{device}/{compute_type}）…", f"Loading Whisper {model_name} ({device}/{compute_type})…"))
         _models[key] = WhisperModel(model_name, device=device, compute_type=compute_type)
     return _models[key]
 
@@ -104,7 +106,7 @@ def transcribe(
     """
     model = _load_model(model_name, device)
 
-    log("解码音频…")
+    log(tr("解码音频…", "Decoding audio…"))
     audio = _decode_audio(audio_path)
 
     # Diarization runs on the CPU while Whisper uses the GPU
@@ -116,7 +118,7 @@ def transcribe(
             t = time.time()
             try:
                 diar["turns"] = diarize(audio, num_speakers=num_speakers)
-                log(f"说话人分离完成，用时 {time.time() - t:.0f}s")
+                log(tr(f"说话人分离完成，用时 {time.time() - t:.0f}s", f"Speaker separation done in {time.time() - t:.0f}s"))
             except Exception as e:  # never lose the transcript over speaker labels
                 diar["error"] = e
         diar_thread = threading.Thread(target=run_diarization, daemon=True)
@@ -126,7 +128,8 @@ def transcribe(
     if auto:
         # Sample several voiced windows: the first 30 s alone is often silence or small talk
         language, prob, _ = model.detect_language(audio, vad_filter=True, language_detection_segments=4)
-        log(f"检测到主要语言：{language_name(language)}（置信度 {prob:.0%}），并逐段识别语言")
+        log(tr(f"检测到主要语言：{language_name(language)}（置信度 {prob:.0%}），并逐段识别语言",
+               f"Main language: {language_name(language)} ({prob:.0%} confidence); detecting per segment"))
 
     # The prompt steers style, so it must be in the recording's language: a Chinese
     # prompt on English audio makes Whisper output Chinese.
@@ -146,7 +149,7 @@ def transcribe(
         # mixed-language test recording. Speaker changes are handled by re-transcription.
     )
     duration = info.duration
-    log(f"音频时长 {fmt_ts(duration)}，开始转写…")
+    log(tr(f"音频时长 {fmt_ts(duration)}，开始转写…", f"Audio length {fmt_ts(duration)}, transcribing…"))
 
     segments: list[Segment] = []
     t0 = time.time()
@@ -161,18 +164,22 @@ def transcribe(
             on_progress(pct)
         if time.time() - last_report > 5:
             last_report = time.time()
-            log(f"  {pct:5.1f}%  [{fmt_ts(s.end)}]  已用 {time.time() - t0:.0f}s")
-    log(f"转写完成，用时 {time.time() - t0:.0f}s，共 {len(segments)} 段")
+            log(tr(f"  {pct:5.1f}%  [{fmt_ts(s.end)}]  已用 {time.time() - t0:.0f}s",
+                   f"  {pct:5.1f}%  [{fmt_ts(s.end)}]  {time.time() - t0:.0f}s elapsed"))
+    log(tr(f"转写完成，用时 {time.time() - t0:.0f}s，共 {len(segments)} 段",
+           f"Transcription done in {time.time() - t0:.0f}s, {len(segments)} segments"))
 
     if diar_thread:
         if diar_thread.is_alive():
-            log("等待说话人分离…")
+            log(tr("等待说话人分离…", "Waiting for speaker separation…"))
         diar_thread.join()
         if "error" in diar:
-            log(f"警告：说话人分离失败（{diar['error']}），转写稿不区分说话人")
+            log(tr(f"警告：说话人分离失败（{diar['error']}），转写稿不区分说话人",
+                   f"Warning: speaker separation failed ({diar['error']}); the transcript has no speaker labels"))
         elif diar["turns"]:
             segments = assign_speakers(model, audio, segments, diar["turns"], language, terms)
-            log(f"识别出 {len({s.speaker for s in segments if s.speaker})} 位说话人")
+            n = len({s.speaker for s in segments if s.speaker})
+            log(tr(f"识别出 {n} 位说话人", f"Found {n} speaker(s)"))
     if auto:
         segments = fix_languages(model, audio, segments, terms)
     return segments, duration, language
@@ -230,11 +237,12 @@ def fix_languages(model, audio, segments: list[Segment], terms: str | None = Non
         if not new:
             out += g
             continue
-        log(f"  [{fmt_ts(start)}] 按 {language_name(lang)} 重新识别：{text[:30]}… → {new[0].text[:30]}…")
+        log(tr(f"  [{fmt_ts(start)}] 按 {language_name(lang)} 重新识别：{text[:30]}… → {new[0].text[:30]}…",
+               f"  [{fmt_ts(start)}] re-transcribed as {language_name(lang)}: {text[:30]}… → {new[0].text[:30]}…"))
         out += new
         fixed += 1
     if fixed:
-        log(f"重新识别了 {fixed} 段被写成另一种语言的话")
+        log(tr(f"重新识别了 {fixed} 段被写成另一种语言的话", f"Re-transcribed {fixed} stretch(es) written in the wrong language"))
     return out
 
 
@@ -371,7 +379,7 @@ def assign_speakers(model, audio, segments: list[Segment], turns, main_language:
             out += parts
             split += 1
     if split:
-        log(f"按说话人拆开了 {split} 段跨两人的话")
+        log(tr(f"按说话人拆开了 {split} 段跨两人的话", f"Split {split} segment(s) that spanned two speakers"))
 
     # Whisper's own voice-activity filter sometimes drops real speech (quieter voices, speech
     # over background sound). The diarizer detects speech independently: transcribe what it
@@ -392,7 +400,7 @@ def assign_speakers(model, audio, segments: list[Segment], turns, main_language:
                 lang = detected if prob >= 0.5 else main_language
             filled += _retranscribe(model, clip, lang, terms, a, labels.get(t.speaker), strict=True)
     if filled:
-        log(f"补上了 {len(filled)} 段 Whisper 漏掉的话")
+        log(tr(f"补上了 {len(filled)} 段 Whisper 漏掉的话", f"Added {len(filled)} line(s) Whisper had skipped"))
         out = sorted(out + filled, key=lambda s: s.start)
     return out
 

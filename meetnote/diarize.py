@@ -16,6 +16,7 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
+from .i18n import tr
 from .transcribe import log
 
 _RELEASES = "https://github.com/k2-fsa/sherpa-onnx/releases/download"
@@ -30,7 +31,7 @@ def model_dir() -> Path:
 
 
 def _download(url: str, dest: Path) -> None:
-    log(f"下载说话人模型 {url.rsplit('/', 1)[-1]} …")
+    log(tr(f"下载说话人模型 {url.rsplit('/', 1)[-1]} …", f"Downloading speaker model {url.rsplit('/', 1)[-1]}…"))
     root = model_dir()
     root.mkdir(parents=True, exist_ok=True)
     tmp = tempfile.NamedTemporaryFile(dir=root, delete=False)
@@ -67,7 +68,7 @@ def ensure_models() -> tuple[Path, Path]:
         if not path.exists():
             _download(url, path)
             if not path.exists():
-                raise RuntimeError(f"说话人模型下载后未找到 {path}")
+                raise RuntimeError(tr(f"说话人模型下载后未找到 {path}", f"Speaker model not found after download: {path}"))
         paths.append(path)
     return paths[0], paths[1]
 
@@ -104,10 +105,11 @@ def diarize(audio, num_speakers: int | None = None, sample_rate: int = 16000) ->
         min_duration_off=0.5,
     )
     if not config.validate():
-        raise RuntimeError("说话人分离配置无效（模型文件损坏？可删除模型缓存后重试）")
+        raise RuntimeError(tr("说话人分离配置无效（模型文件损坏？可删除模型缓存后重试）",
+                               "Invalid speaker-separation setup (corrupt model file? delete the model cache and retry)"))
     sd = sherpa_onnx.OfflineSpeakerDiarization(config)
     if sd.sample_rate != sample_rate:
-        raise RuntimeError(f"说话人模型需要 {sd.sample_rate} Hz 音频")
+        raise RuntimeError(tr(f"说话人模型需要 {sd.sample_rate} Hz 音频", f"The speaker model needs {sd.sample_rate} Hz audio"))
     turns = [(s.start, s.end) for s in sd.process(audio).sort_by_start_time()]
     if not turns:
         return []

@@ -29,6 +29,8 @@ API keys, port and access code live in `meetnote\.env` (created from `.env.examp
 DEEPSEEK_API_KEY=sk-your-key
 ```
 
+The interface language (messages, `--help`, reports and output file names) follows your system's display language; set `MEETNOTE_LANG=en` or `MEETNOTE_LANG=zh` in `.env` to choose. It is independent of the language of the notes.
+
 Lookup order: the file named by `MEETNOTE_ENV_FILE` → `.env` in the current folder → `meetnote\.env`. Environment variables that are already set win over the file. `.env` is in `.gitignore`; never share it.
 
 **Summaries need one LLM backend** (`--backend auto` picks the first one configured, in this order):
@@ -57,24 +59,24 @@ meetnote run weekly.m4a --summary-lang en
 
 # Transcribe only / re-summarize an existing transcript (e.g. after editing the prompts)
 meetnote transcribe weekly.m4a
-meetnote summarize weekly_纪要
+meetnote summarize weekly_notes
 
 # Replace speaker labels with names, then regenerate the notes
-meetnote rename weekly_纪要 S1=Alice S2=Bob
-meetnote summarize weekly_纪要
+meetnote rename weekly_notes S1=Alice S2=Bob
+meetnote summarize weekly_notes
 ```
 
-Output goes to `<file name>_纪要\` in the current folder (file names are in Chinese; the content follows `--summary-lang`):
+Output goes to `<file name>_notes\` in the current folder. File names follow the interface language (with `MEETNOTE_LANG=zh`: `<file name>_纪要\`, `转写稿.txt`, `两页精华.md`, …); a folder that already has files keeps its naming. The content of the notes follows `--summary-lang`.
 
 ```
-weekly_纪要\
-  转写稿.txt     transcript: timestamps and speakers, e.g. "[01:23] S2: …"; new line at every change of speaker
-  转写稿.srt     subtitles, to check against the audio in a player
-  要点笔记.md    section-by-section notes: views/facts/decisions, each with timestamp and what it refers to
-  全文梗概.md    full synopsis: the whole meeting in order, with citations
-  两页精华.md    two-page highlights: conclusions first, fits on two A4 pages, with citations
-  核查记录.md    what the fact-check pass found and fixed
-  meta.json      duration, language, speakers, source file
+weekly_notes\
+  transcript.txt   timestamps and speakers, e.g. "[01:23] S2: …"; new line at every change of speaker
+  transcript.srt   subtitles, to check against the audio in a player
+  notes.md         section-by-section notes: views/facts/decisions, each with timestamp and what it refers to
+  synopsis.md      the whole meeting in order, with citations
+  highlights.md    conclusions first, fits on two A4 pages, with citations
+  fact-check.md    what the fact-check pass found and fixed
+  meta.json        duration, language, speakers, source file
 ```
 
 ### Languages
@@ -106,10 +108,10 @@ The default `grounded` pipeline targets one failure in particular: opinions attr
 To score how faithful the notes are (statement by statement against the transcript; the judge defaults to `deepseek-reasoner`):
 
 ```powershell
-meetnote check weekly_纪要
+meetnote check weekly_notes
 ```
 
-The result is written to `忠实度评估.md`. LLM judges make mistakes too (TofuEval found binary "is this supported?" judgments unreliable even with GPT-4), so use it to compare versions, not as an absolute score. How the pipeline was evaluated and improved: [docs/accuracy-evaluation.md](docs/accuracy-evaluation.md).
+The result is written to `faithfulness.md`. LLM judges make mistakes too (TofuEval found binary "is this supported?" judgments unreliable even with GPT-4), so use it to compare versions, not as an absolute score. How the pipeline was evaluated and improved: [docs/accuracy-evaluation.md](docs/accuracy-evaluation.md).
 
 If a transcript already exists, `run` skips transcription; add `--force` to redo it.
 
@@ -197,7 +199,7 @@ The structure and rules of both summaries are in prompt files; edit them directl
 - `meetnote\prompts\synopsis.md`: full synopsis
 - `meetnote\prompts\highlights.md`: two-page highlights
 
-The prompts are written in Chinese; the output language is set separately by `--summary-lang`.
+The prompts are written in Chinese; the output language is set separately by `--summary-lang`, and the interface language by `MEETNOTE_LANG`.
 
 ## Known limitations
 
