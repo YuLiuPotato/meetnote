@@ -30,7 +30,10 @@ def transcribe_to_dir(
     on_progress: Callable[[float], None] | None = None,
     diarization: bool = True,
     num_speakers: int | None = None,
+    extra_meta: dict | None = None,
 ) -> dict:
+    """`extra_meta` is merged into meta.json, e.g. the source files of a merged recording
+    ("parts") and their recording date ("file_date")."""
     out_dir.mkdir(parents=True, exist_ok=True)
     segments, duration, detected = transcribe(
         audio, model_name=whisper_model, language=language,
@@ -47,6 +50,7 @@ def transcribe_to_dir(
         # Labels as they currently appear in the transcript (S1, S2, … or names given later)
         "speakers": sorted({s.speaker for s in segments if s.speaker}, key=_label_order),
     }
+    meta.update(extra_meta or {})
     (out_dir / META).write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
     return meta
 
@@ -127,6 +131,10 @@ def summarize_dir(
         lines.append(f"说话人（自动区分，可能已改成姓名）：{'、'.join(meta['speakers'])}")
     if meta.get("source"):
         lines.append(f"文件名：{Path(meta['source']).name}")
+    if len(meta.get("parts") or []) > 1:
+        # A merged recording: the joins are often breaks or a change of session
+        joins = "；".join(f"[{fmt_ts(p['start'])}] {p['file']}" for p in meta["parts"])
+        lines.append(f"录音由 {len(meta['parts'])} 个文件按顺序拼接而成，各文件起点：{joins}")
     return summarize(
         txt, out_dir, backend=backend, model=model, context=context,
         meta="\n".join(lines) or "未知", which=which, on_step=on_step,

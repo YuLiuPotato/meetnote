@@ -9,6 +9,7 @@ from pathlib import Path
 
 from . import __version__
 from .i18n import default_out_dir, file_path, tr
+from .merge import collect_inputs, earliest_date, merge_to_mp3
 from .pipeline import summarize_dir, transcribe_to_dir
 from .summarize import BACKENDS, PIPELINES, SummarizeError
 from .transcribe import log
@@ -34,11 +35,38 @@ def load_env() -> Path | None:
     return None
 
 
+def _inputs(args) -> tuple[list[Path], str]:
+    """Audio files from the command line, and the name for outputs: the folder's name when a
+    folder was given, else the first file's name."""
+    paths = [Path(a).resolve() for a in args.audio]
+    try:
+        files = collect_inputs(paths)
+    except FileNotFoundError as e:
+        sys.exit(str(e))
+    name = paths[0].name if paths[0].is_dir() else files[0].stem
+    return files, name
+
+
+def do_merge(args) -> None:
+    files, name = _inputs(args)
+    if args.out:
+        out = Path(args.out).resolve()
+    else:
+        from_folder = len(args.audio) == 1 and Path(args.audio[0]).is_dir()
+        out = Path.cwd() / (f"{name}.mp3" if from_folder else f"{name}_merged.mp3")
+    if out.suffix.lower() != ".mp3":
+        out = out.with_suffix(".mp3")
+    log(tr(f"合并 {len(files)} 个文件 → {out}", f"Merging {len(files)} file(s) → {out}"))
+    try:
+        merge_to_mp3(files, out, bitrate=args.bitrate * 1000)
+    except (RuntimeError, ValueError) as e:
+        sys.exit(str(e))
+    log(tr("完成。", "Done."))
+
+
 def do_transcribe(args) -> Path:
-    audio = Path(args.audio).resolve()
-    if not audio.is_file():
-        sys.exit(tr(f"找不到音频文件：{audio}", f"Audio file not found: {audio}"))
-    out_dir = Path(args.out).resolve() if args.out else default_out_dir(Path.cwd(), audio.stem)
+    files, name = _inputs(args)
+    out_dir = Path(args.out).resolve() if args.out else default_out_dir(Path.cwd(), name)
     txt = file_path(out_dir, "transcript")
 
     if txt.exists() and not args.force:
@@ -46,10 +74,22 @@ def do_transcribe(args) -> Path:
                f"Transcript exists, skipping transcription (use --force to redo it): {txt}"))
         return out_dir
 
+    extra = None
+    audio = files[0]
+    if len(files) > 1:
+        # Several pieces of one meeting: join them, then transcribe the result as one recording
+        audio = out_dir / f"{name}.mp3"
+        log(tr(f"合并 {len(files)} 个文件 → {audio}", f"Merging {len(files)} file(s) → {audio}"))
+        try:
+            parts = merge_to_mp3(files, audio)
+        except (RuntimeError, ValueError) as e:
+            sys.exit(str(e))
+        extra = {"parts": parts, "file_date": earliest_date(files)}
+
     transcribe_to_dir(
         audio, out_dir, whisper_model=args.whisper_model, language=args.language,
         device=args.device, terms=args.terms, source_name=str(audio),
-        diarization=not args.no_diarize, num_speakers=args.speakers or None,
+        diarization=not args.no_diarize, num_speakers=args.speakers or None, extra_meta=extra,
     )
     log(f"  → {file_path(out_dir, 'transcript')}")
     return out_dir
@@ -102,8 +142,11 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--device", default="auto", choices=["auto", "cuda", "cpu"])
 
     def add_transcribe_opts(sp):
-        sp.add_argument("audio", help=tr("音频/视频文件（m4a、mp3、wav、mp4 等）",
-                                         "audio/video file (m4a, mp3, wav, mp4, …)"))
+        sp.add_argument("audio", nargs="+",
+                        help=tr("音频/视频文件（m4a、mp3、wav、mp4 等）。给多个文件或一个文件夹时，先按顺序合并成一个 MP3 再转写"
+                                "（文件夹内按文件名自然排序）",
+                                "audio/video file (m4a, mp3, wav, mp4, …). Several files or a folder are first joined into "
+                                "one MP3, in the order given (a folder's files in natural name order), then transcribed"))
         sp.add_argument("-o", "--out", help=tr("输出目录（默认：当前目录下的 <文件名>_纪要/）",
                                                "output folder (default: <file name>_notes/ in the current folder)"))
         add_whisper_opts(sp)
@@ -151,6 +194,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp_tr = sub.add_parser("transcribe", help=tr("只转写", "transcribe only"))
     add_transcribe_opts(sp_tr)
+
+    sp_mrg = sub.add_parser("merge", help=tr("把多个录音（如录音笔分段的 WAV）按顺序合并成一个 MP3",
+                                             "join several recordings (e.g. a recorder's WAV pieces) into one MP3, in order"))
+    sp_mrg.add_argument("audio", nargs="+", help=tr("音频文件，或包含它们的文件夹（按文件名自然排序）",
+                                                    "audio files, or a folder of them (natural name order)"))
+    sp_mrg.add_argument("-o", "--out", help=tr("输出的 MP3 文件（默认：当前目录下的 <第一个文件名>_merged.mp3）",
+                                               "output MP3 (default: <first file name>_merged.mp3 in the current folder)"))
+    sp_mrg.add_argument("--bitrate", type=int, default=128,
+                        help=tr("码率 kbps（默认 128；单声道自动减半）", "bitrate in kbps (default 128; halved for mono)"))
 
     sp_sum = sub.add_parser("summarize", help=tr("对已有转写稿生成梗概和精华", "write the synopsis and highlights for an existing transcript"))
     sp_sum.add_argument("target", help=tr("输出目录，或转写稿 .txt 文件", "output folder, or a transcript .txt file"))
@@ -207,7 +259,9 @@ def main(argv: list[str] | None = None) -> None:
     if getattr(args, "language", None) == "auto":
         args.language = None
 
-    if args.cmd == "transcribe":
+    if args.cmd == "merge":
+        do_merge(args)
+    elif args.cmd == "transcribe":
         do_transcribe(args)
     elif args.cmd == "summarize":
         do_summarize(args)

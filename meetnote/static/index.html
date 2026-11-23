@@ -117,7 +117,7 @@ button.primary:disabled { opacity: .5; cursor: default; }
       <strong id="dropTitle"></strong>
       <span id="dropHint"></span>
     </div>
-    <input type="file" id="file" class="hidden" accept="audio/*,video/*">
+    <input type="file" id="file" class="hidden" accept="audio/*,video/*" multiple>
     <label for="context" data-i18n="contextLabel">会议背景（选填，帮助理解上下文和纠正术语）</label>
     <textarea id="context" data-i18n-ph="contextPh"></textarea>
     <label for="terms" data-i18n="termsLabel">人名 / 术语（选填，逗号分隔，提高识别准确率）</label>
@@ -166,6 +166,7 @@ button.primary:disabled { opacity: .5; cursor: default; }
       <button id="dDownload" data-i18n="dlCurrent">下载当前</button>
       <button id="dPrint" data-i18n="print">打印 / 存 PDF</button>
       <button id="dShare" data-i18n="share">复制分享链接</button>
+      <button id="dAudio" class="hidden" data-i18n="dlAudio">下载合并录音</button>
       <button id="dRetry" class="hidden" data-i18n="retry">重新生成总结</button>
     </div>
     <details id="dSpeakers" class="hidden" style="margin-top:14px">
@@ -185,8 +186,10 @@ const I18N = {
   zh: {
     appTitle: "会议纪要助手", tagline: "上传会议录音，几分钟后得到转写稿、全文梗概和两页精华。",
     gateTitle: "请输入访问码", codePh: "访问码", enter: "进入",
-    newNotes: "新建纪要", dropTitle: "点击选择或拖入录音文件", dropHint: "支持 m4a、mp3、wav、mp4 等常见音视频格式",
-    fileChosen: "{size} MB · 点击可更换",
+    newNotes: "新建纪要", dropTitle: "点击选择或拖入录音文件",
+    dropHint: "支持 m4a、mp3、wav、mp4 等常见音视频格式；可选多个文件（如录音笔分段的 WAV），会按文件名顺序合并成一个录音",
+    fileChosen: "{size} MB · 点击可更换", filesChosen: "{n} 个文件，按此顺序合并", filesSize: "共 {size} MB · 点击可更换",
+    mergedFrom: "由 {n} 个文件合并", dlAudio: "下载合并录音",
     contextLabel: "会议背景（选填，帮助理解上下文和纠正术语）", contextPh: "例如：产品团队两位负责人讨论季度路线",
     termsLabel: "人名 / 术语（选填，逗号分隔，提高识别准确率）", termsPh: "例如：Kubernetes, OKR, 张伟",
     recLang: "录音语言", autoDetect: "自动识别", sumLang: "纪要语言", sameAsRec: "跟录音语言一致",
@@ -214,8 +217,9 @@ const I18N = {
     tagline: "Upload a meeting recording; a few minutes later you get a transcript, a full synopsis and two-page highlights.",
     gateTitle: "Enter the access code", codePh: "Access code", enter: "Enter",
     newNotes: "New notes", dropTitle: "Click to choose, or drop a recording here",
-    dropHint: "m4a, mp3, wav, mp4 and other common audio/video formats",
-    fileChosen: "{size} MB · click to change",
+    dropHint: "m4a, mp3, wav, mp4 and other common formats; choose several files (e.g. a recorder's WAV pieces) to join them into one recording, in file-name order",
+    fileChosen: "{size} MB · click to change", filesChosen: "{n} files, joined in this order", filesSize: "{size} MB in total · click to change",
+    mergedFrom: "joined from {n} files", dlAudio: "Download merged recording",
     contextLabel: "Meeting background (optional; helps with context and terms)",
     contextPh: "e.g. Two product leads review the quarterly roadmap",
     termsLabel: "Names / terms (optional, comma-separated; improves recognition)", termsPh: "e.g. Kubernetes, OKR, Alice Chen",
@@ -247,7 +251,8 @@ const docEn = (d) => ({ "全文梗概": "synopsis", "两页精华": "highlights"
 const SERVER_EN = [
   [/^排队中$/, "Queued"], [/^正在转写$/, "Transcribing"], [/^正在生成总结$/, "Generating summaries"], [/^完成$/, "Done"],
   [/^服务重启，重新排队$/, "Requeued after a server restart"],
-  [/^正在逐段整理要点$/, "Extracting notes section by section"],
+  [/^正在逐段整理要点$/, "Extracting notes section by section"], [/^正在合并录音$/, "Joining the recordings"],
+  [/^一次最多 (\d+) 个文件$/, "At most $1 files per job"],
   [/^正在撰写《(.+)》$/, (m, d) => `Writing the ${docEn(d)}`],
   [/^正在核查《(.+)》$/, (m, d) => `Fact-checking the ${docEn(d)}`],
   [/^正在修订《(.+)》$/, (m, d) => `Revising the ${docEn(d)}`],
@@ -334,25 +339,37 @@ $("codeBtn").onclick = async () => {
 $("code").onkeydown = (e) => { if (e.key === "Enter") $("codeBtn").click(); };
 
 // ---------- upload ----------
-let chosen = null;
-function choose(file) {
-  chosen = file;
-  $("drop").classList.toggle("has-file", !!file);
-  $("dropTitle").textContent = file ? file.name : t("dropTitle");
-  $("dropHint").textContent = file ? t("fileChosen", { size: (file.size / 1e6).toFixed(1) }) : t("dropHint");
-  $("submit").disabled = !file;
+let chosen = [];
+const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+function choose(files) {
+  chosen = [...(files || [])].sort((a, b) => collator.compare(a.name, b.name));
+  const n = chosen.length, size = (chosen.reduce((s, f) => s + f.size, 0) / 1e6).toFixed(1);
+  $("drop").classList.toggle("has-file", n > 0);
+  if (n === 0) {
+    $("dropTitle").textContent = t("dropTitle");
+    $("dropHint").textContent = t("dropHint");
+  } else if (n === 1) {
+    $("dropTitle").textContent = chosen[0].name;
+    $("dropHint").textContent = t("fileChosen", { size });
+  } else {
+    $("dropTitle").textContent = t("filesChosen", { n });
+    const names = chosen.map((f) => f.name);
+    $("dropHint").textContent = (n > 6 ? [...names.slice(0, 3), "…", ...names.slice(-2)] : names).join(" → ")
+      + " · " + t("filesSize", { size });
+  }
+  $("submit").disabled = n === 0;
   $("upErr").textContent = "";
 }
 $("drop").onclick = () => $("file").click();
-$("file").onchange = () => choose($("file").files[0] || null);
+$("file").onchange = () => choose($("file").files);
 ["dragenter", "dragover"].forEach((ev) => $("drop").addEventListener(ev, (e) => { e.preventDefault(); $("drop").classList.add("over"); }));
 ["dragleave", "drop"].forEach((ev) => $("drop").addEventListener(ev, (e) => { e.preventDefault(); $("drop").classList.remove("over"); }));
-$("drop").addEventListener("drop", (e) => { if (e.dataTransfer.files[0]) choose(e.dataTransfer.files[0]); });
+$("drop").addEventListener("drop", (e) => { if (e.dataTransfer.files.length) choose(e.dataTransfer.files); });
 
 $("submit").onclick = () => {
-  if (!chosen) return;
+  if (!chosen.length) return;
   const fd = new FormData();
-  fd.append("file", chosen);
+  for (const f of chosen) fd.append("file", f);
   fd.append("context", $("context").value);
   fd.append("terms", $("terms").value);
   fd.append("language", $("language").value);
@@ -378,7 +395,7 @@ $("submit").onclick = () => {
     if (xhr.status === 401) { showGate(t("wrongCode")); return; }
     if (xhr.status !== 200) { $("upErr").textContent = srv(data.detail) || t("uploadFailed"); $("submit").disabled = false; return; }
     remember(data);
-    choose(null); $("file").value = ""; $("context").value = ""; $("terms").value = "";
+    choose([]); $("file").value = ""; $("context").value = ""; $("terms").value = "";
     open(data.id);
   };
   xhr.onerror = () => { $("upErr").textContent = t("netError"); $("submit").disabled = false; $("upBar").classList.add("hidden"); };
@@ -471,6 +488,7 @@ function renderDetail() {
   $("dMeta").textContent = [
     t("submitted", { t: fmtTime(j.created_at) }),
     fmtDur(j.duration) && t("durationIs", { d: fmtDur(j.duration) }),
+    j.parts > 1 && t("mergedFrom", { n: j.parts }),
     j.detected_language && t("langIs", { l: langName(j.detected_language) }) + (j.language === "auto" ? t("autoTag") : ""),
     j.summary_lang && j.summary_lang !== "auto" && t("notesIn", { l: langName(j.summary_lang) }),
     j.context && t("contextIs", { c: j.context }),
@@ -486,6 +504,7 @@ function renderDetail() {
   $("dRetry").classList.toggle("hidden", !(j.status === "failed" && j.files.includes("transcript")));
   $("dActions").classList.toggle("hidden", j.files.length === 0 && !active);
   ["dZip", "dDownload", "dPrint"].forEach((b) => $(b).classList.toggle("hidden", j.files.length === 0));
+  $("dAudio").classList.toggle("hidden", !j.merged_audio);
 
   renderSpeakers(j, active);
 
@@ -564,6 +583,7 @@ async function renderDoc(key) {
 $("dZip").onclick = () => { location.href = `/api/jobs/${current}/zip`; };
 $("dDownload").onclick = () => { location.href = `/api/jobs/${current}/files/${currentTab}`; };
 $("dPrint").onclick = () => window.print();
+$("dAudio").onclick = () => { location.href = `/api/jobs/${current}/audio`; };
 $("dShare").onclick = async () => {
   const url = `${location.origin}/#job=${current}`;
   try { await navigator.clipboard.writeText(url); $("dShare").textContent = t("copied"); }

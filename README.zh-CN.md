@@ -56,6 +56,14 @@ meetnote run 周会.m4a --speakers 3
 meetnote transcribe 周会.m4a
 meetnote summarize 周会_纪要
 
+# 一场会议被分成多个文件（如录音笔分段的 WAV）：先合并成一个 MP3，再转写。
+# 按给出的顺序合并；给文件夹时按文件名自然排序（REC2 在 REC10 前面）
+meetnote run REC001.WAV REC002.WAV REC003.WAV
+meetnote run D:\录音\2026-11-20\
+
+# 只合并成一个 MP3，不转写
+meetnote merge D:\录音\2026-11-20\ -o 会议.mp3
+
 # 把说话人标签换成姓名，再重新生成纪要
 meetnote rename 周会_纪要 S1=张三 S2=李四
 meetnote summarize 周会_纪要
@@ -110,6 +118,8 @@ meetnote check 周会_纪要
 
 已经有转写稿时，`run` 会跳过转写直接总结；需要重新转写时加 `--force`。
 
+给多个文件时，合并后的录音保存在输出目录里（`<名称>.mp3`），当作一场会议转写。`meta.json` 的 `parts` 记录每个文件在合并录音里的起点，总结时也会告诉模型拼接位置（通常是休息或换场）。输入可以是任意格式、任意采样率，统一转成第一个文件的采样率和声道数。`meetnote merge --bitrate 96` 可以设置 MP3 码率（默认 128 kbps，单声道减半）。
+
 ## 常用参数
 
 | 参数 | 作用 |
@@ -127,6 +137,7 @@ meetnote check 周会_纪要
 | `--no-diarize` | 不区分说话人 |
 | `--summary-lang en` | 纪要语言（默认跟录音一致） |
 | `--pipeline simple` | 单次生成，快但不如默认流程准确 |
+| 多个文件或文件夹 | 先合并成一个 MP3，再转写 |
 
 `.env` 里的 `MEETNOTE_CLAUDE` 可以指定 claude 可执行文件的路径。
 
@@ -139,6 +150,7 @@ meetnote check 周会_纪要
 - 原始录音转写完就删除，只保留文字结果；结果默认保留 30 天（`--keep-days`）。
 - 总结失败时转写稿会保留，页面上可以一键“重新生成总结”。
 - 服务重启后，没跑完的任务会自动重新排队。
+- 一个任务可以上传多个文件（如录音笔分段的 WAV），按文件名顺序合并成一个录音再转写。服务以 `--keep-audio` 启动时，任务页面可以下载合并后的 MP3。
 
 ### 1. 配置（一次性）
 

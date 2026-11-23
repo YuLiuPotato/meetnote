@@ -30,17 +30,16 @@ from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFil
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response
 
 from .i18n import FILE_NAMES, find_file, tr
+from .merge import AUDIO_EXTS, merge_to_mp3, natural_key
 from .pipeline import rename_speakers, summarize_dir, transcribe_to_dir
 from .summarize import SummarizeError, resolve_backend
 from .transcribe import LANGUAGE_NAMES, log
 
 STATIC_DIR = Path(__file__).parent / "static"
 JOB_ID = re.compile(r"^[0-9a-f]{32}$")
-AUDIO_EXTS = {
-    ".m4a", ".mp3", ".wav", ".aac", ".flac", ".ogg", ".opus", ".wma", ".amr",
-    ".mp4", ".mov", ".mkv", ".webm", ".m4v",
-}
-MAX_UPLOAD_MB = 2048
+MAX_UPLOAD_MB = 2048  # per job, all files together
+MAX_FILES = 200
+MERGED = "audio.mp3"  # a multi-file job's recordings joined into one
 
 # Files the page can show or download, in tab order. Each job's files are named in the
 # server's interface language; find_file() accepts either language.
@@ -156,14 +155,25 @@ class Worker:
                     last[0] = pct
                     store.update(jid, progress=round(pct, 1))
 
-            audio = job_dir / job["audio_file"]
+            uploads = [job_dir / name for name in (job.get("audio_files") or [job["audio_file"]])]
+            audio, extra = uploads[0], None
             try:
+                if len(uploads) > 1 or (job_dir / MERGED).exists():
+                    if not (job_dir / MERGED).exists():  # a restart may have happened after merging
+                        store.update(jid, message="正在合并录音")
+                        parts = merge_to_mp3(uploads, job_dir / MERGED)
+                        for part, original in zip(parts, job["source_files"]):
+                            part["file"] = original
+                        store.update(jid, parts=parts, message="正在转写")
+                    for path in uploads:
+                        path.unlink(missing_ok=True)
+                    audio, extra = job_dir / MERGED, {"parts": store.get(jid).get("parts")}
                 language = job.get("language", "auto")
                 meta = transcribe_to_dir(
                     audio, job_dir, whisper_model=cfg["whisper_model"], device=cfg["device"],
                     language=None if language == "auto" else language,
                     terms=job.get("terms") or None, source_name=job["filename"], on_progress=on_progress,
-                    num_speakers=job.get("num_speakers") or None,
+                    num_speakers=job.get("num_speakers") or None, extra_meta=extra,
                 )
             except Exception as e:
                 log(traceback.format_exc())
@@ -207,6 +217,8 @@ def create_app(store: JobStore, access_code: str | None):
             "language", "detected_language", "summary_lang", "num_speakers", "speakers",
         )}
         out["files"] = [key for key in FILES if find_file(job_dir, key)]
+        out["parts"] = len(job.get("source_files") or []) or 1
+        out["merged_audio"] = job["status"] not in ACTIVE and (job_dir / MERGED).exists()
         out["jobs_ahead"] = store.jobs_ahead(job["id"]) if job["status"] == "queued" else 0
         return out
 
@@ -226,13 +238,19 @@ def create_app(store: JobStore, access_code: str | None):
                 "audio_exts": sorted(AUDIO_EXTS), "languages": LANGUAGE_NAMES}
 
     @app.post("/api/jobs")
-    def create_job(file: UploadFile = File(...), context: str = Form(""), terms: str = Form(""),
+    def create_job(file: list[UploadFile] = File(...), context: str = Form(""), terms: str = Form(""),
                    language: str = Form("auto"), summary_lang: str = Form("auto"),
                    num_speakers: int = Form(0)):
-        filename = Path(file.filename or "录音").name
-        ext = Path(filename).suffix.lower()
-        if ext not in AUDIO_EXTS:
-            raise HTTPException(400, f"不支持的文件类型 {ext or '（无扩展名）'}，请上传音频或视频文件")
+        """One recording, or several pieces of one meeting (joined in natural name order)."""
+        uploads = sorted(file, key=lambda f: natural_key(Path(f.filename or "audio")))
+        if len(uploads) > MAX_FILES:
+            raise HTTPException(400, f"一次最多 {MAX_FILES} 个文件")
+        names = [Path(f.filename or "录音").name for f in uploads]
+        for name in names:
+            ext = Path(name).suffix.lower()
+            if ext not in AUDIO_EXTS:
+                raise HTTPException(400, f"不支持的文件类型 {ext or '（无扩展名）'}，请上传音频或视频文件")
+        filename = names[0] if len(names) == 1 else f"{Path(names[0]).stem} (+{len(names) - 1})"
         for value in (language, summary_lang):
             if value != "auto" and value not in LANGUAGE_NAMES:
                 raise HTTPException(400, f"不支持的语言：{value}")
@@ -241,18 +259,20 @@ def create_app(store: JobStore, access_code: str | None):
         jid = uuid.uuid4().hex
         job_dir = store.dir(jid)
         job_dir.mkdir(parents=True)
-        dest = job_dir / f"audio{ext}"
-        size, limit = 0, MAX_UPLOAD_MB * 1024 * 1024
-        with dest.open("wb") as f:
-            while chunk := file.file.read(1024 * 1024):
-                size += len(chunk)
-                if size > limit:
-                    f.close()
-                    shutil.rmtree(job_dir, ignore_errors=True)
-                    raise HTTPException(413, f"文件超过 {MAX_UPLOAD_MB} MB")
-                f.write(chunk)
+        size, limit, saved = 0, MAX_UPLOAD_MB * 1024 * 1024, []
+        for i, (upload, name) in enumerate(zip(uploads, names)):
+            dest = job_dir / f"audio_{i:03d}{Path(name).suffix.lower()}"
+            with dest.open("wb") as f:
+                while chunk := upload.file.read(1024 * 1024):
+                    size += len(chunk)
+                    if size > limit:
+                        f.close()
+                        shutil.rmtree(job_dir, ignore_errors=True)
+                        raise HTTPException(413, f"文件超过 {MAX_UPLOAD_MB} MB")
+                    f.write(chunk)
+            saved.append(dest.name)
         job = {
-            "id": jid, "filename": filename, "audio_file": dest.name, "size": size,
+            "id": jid, "filename": filename, "audio_files": saved, "source_files": names, "size": size,
             "context": context.strip()[:2000], "terms": terms.strip()[:500],
             "language": language, "summary_lang": summary_lang, "num_speakers": num_speakers,
             "created_at": time.time(), "status": "queued", "mode": "full",
@@ -260,7 +280,8 @@ def create_app(store: JobStore, access_code: str | None):
         }
         store.create(job)
         store.enqueue(jid)
-        log(tr(f"新任务 {jid}：{filename}（{size / 1e6:.1f} MB）", f"New job {jid}: {filename} ({size / 1e6:.1f} MB)"))
+        log(tr(f"新任务 {jid}：{filename}（{len(names)} 个文件，{size / 1e6:.1f} MB）",
+               f"New job {jid}: {filename} ({len(names)} file(s), {size / 1e6:.1f} MB)"))
         return public(store.get(jid))
 
     @app.get("/api/jobs/{jid}")
@@ -303,6 +324,16 @@ def create_app(store: JobStore, access_code: str | None):
         if inline:
             return PlainTextResponse(path.read_text(encoding="utf-8"))
         return FileResponse(path, filename=download_name(job, path.name), media_type="text/plain; charset=utf-8")
+
+    @app.get("/api/jobs/{jid}/audio")
+    def get_audio(jid: str):
+        """The merged recording of a multi-file job (kept only with --keep-audio)."""
+        job = require_job(jid)
+        path = store.dir(jid) / MERGED
+        if job["status"] in ACTIVE or not path.exists():
+            raise HTTPException(404, "文件不存在")
+        return FileResponse(path, filename=f"{Path(job['source_files'][0]).stem}{tr('_合并', '_merged')}.mp3",
+                            media_type="audio/mpeg")
 
     @app.get("/api/jobs/{jid}/zip")
     def get_zip(jid: str):

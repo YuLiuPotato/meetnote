@@ -61,6 +61,14 @@ meetnote run weekly.m4a --summary-lang en
 meetnote transcribe weekly.m4a
 meetnote summarize weekly_notes
 
+# A meeting split into several files (e.g. a recorder's WAV pieces): join them into one MP3 and transcribe it.
+# Files are joined in the order given; a folder's audio files in natural name order (REC2 before REC10)
+meetnote run REC001.WAV REC002.WAV REC003.WAV
+meetnote run D:\recordings\2026-11-20\
+
+# Only join them into one MP3, without transcribing
+meetnote merge D:\recordings\2026-11-20\ -o meeting.mp3
+
 # Replace speaker labels with names, then regenerate the notes
 meetnote rename weekly_notes S1=Alice S2=Bob
 meetnote summarize weekly_notes
@@ -115,6 +123,8 @@ The result is written to `faithfulness.md`. LLM judges make mistakes too (TofuEv
 
 If a transcript already exists, `run` skips transcription; add `--force` to redo it.
 
+When several files are given, the merged recording is saved in the output folder as `<name>.mp3` and transcribed as one meeting. `meta.json` records where each file starts (`parts`), and the notes are told about the joins, which are often breaks. Inputs can be any format and sample rate; everything is converted to the first file's sample rate and channels. `meetnote merge --bitrate 96` sets the MP3 bitrate (default 128 kbps, halved for mono).
+
 ## Options
 
 | Option | What it does |
@@ -132,6 +142,7 @@ If a transcript already exists, `run` skips transcription; add `--force` to redo
 | `--no-diarize` | don't separate speakers |
 | `--summary-lang en` | language of the notes (default: same as the recording) |
 | `--pipeline simple` | single pass: faster, less accurate |
+| several files or a folder | join them into one MP3 first, then transcribe |
 
 `MEETNOTE_CLAUDE` in `.env` can point to the `claude` executable.
 
@@ -144,6 +155,7 @@ Run it on one machine with an NVIDIA GPU; colleagues upload recordings and read 
 - The original recording is deleted after transcription; only text is kept, for 30 days by default (`--keep-days`).
 - If summarizing fails, the transcript is kept and the page offers "regenerate".
 - Unfinished jobs resume after a restart.
+- Several files can be uploaded as one job (e.g. a recorder's WAV pieces); they are joined in file-name order into one recording. With `--keep-audio` the merged MP3 can be downloaded from the job page.
 
 ### 1. Configure (once)
 
