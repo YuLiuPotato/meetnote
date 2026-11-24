@@ -96,6 +96,23 @@ This recording also exposed and fixed three problems: (1) Python's own certifica
 
 Remaining speaker errors: the presenter was split into two labels during Q&A (fixed by giving both the same name), and about 5 short lines have the wrong speaker.
 
+## Round 3: German and German/English meetings (2026-11-24)
+
+Test audio was synthesized with open Piper German voices (Thorsten, Eva) and an English Windows voice, from scripts with a known text, so every line can be checked:
+
+| Recording | Before | After |
+|---|---|---|
+| German, two speakers, three WAV pieces (35 s) | – | all 6 lines correct, 2 speakers correct; two one-word interjections ("Genau.", "In Ordnung.") dropped by Whisper |
+| German/English alternating, three speakers (35 s) | Whisper kept only the German lines: 4 lines, most English speech lost, one German line given the English speaker | all 6 lines complete and in their own language, all speakers correct |
+
+Cause: in multilingual mode Whisper decides one language per 30-second window; in a German-led recording it drops (or translates) English stretches. The earlier check compared writing systems, which cannot tell German from English. Fixes:
+
+- **Turn-by-turn transcription for mixed recordings**: each speaker run is language-checked on its own audio; when at least two languages each appear in two or more runs, every run is transcribed separately in its own language (else that speaker's usual language). Single-language recordings keep the normal path: the 9-minute English pitch produced a word-for-word identical transcript.
+- **Function-word check** for Latin-script languages (de, en, fr, es, it, nl, pt) in the wrong-language repair.
+- **German hallucination filter**: broadcaster subtitle credits ("Untertitel im Auftrag des ZDF", "Untertitelung des WDR") and "Vielen Dank fürs Zuschauen"; "Vielen Dank für Ihre Aufmerksamkeit" is kept because it is said for real at the end of talks.
+
+German notes (DeepSeek, `--summary-lang de`) for the mixed meeting attributed each statement to the right product and speaker and kept English quotes verbatim.
+
 ## Next steps
 
 1. **Re-evaluate on more real meetings** (Chinese and mixed-language) with `meetnote check`, to see how much attribution errors drop with speaker separation.

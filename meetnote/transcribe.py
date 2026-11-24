@@ -56,7 +56,8 @@ def _decode_audio(path: Path, sr: int = 16000):
         for out in resampler.resample(None):
             chunks.append(out.to_ndarray().reshape(-1))
     if not chunks:
-        raise RuntimeError(tr(f"没有从 {path} 解码出音频", f"No audio could be decoded from {path}"))
+        raise RuntimeError(tr(f"没有从 {path} 解码出音频", f"No audio could be decoded from {path}",
+                                                   f"Aus {path} konnte kein Audio dekodiert werden"))
     return np.concatenate(chunks).astype(np.float32) / 32768.0
 
 
@@ -79,7 +80,8 @@ def _load_model(model_name: str, device: str):
     device, compute_type = _pick_device(device)
     key = (model_name, device)
     if key not in _models:
-        log(tr(f"加载 Whisper {model_name}（{device}/{compute_type}）…", f"Loading Whisper {model_name} ({device}/{compute_type})…"))
+        log(tr(f"加载 Whisper {model_name}（{device}/{compute_type}）…", f"Loading Whisper {model_name} ({device}/{compute_type})…",
+                                                                     f"Lade Whisper {model_name} ({device}/{compute_type})…"))
         _models[key] = WhisperModel(model_name, device=device, compute_type=compute_type)
     return _models[key]
 
@@ -106,7 +108,7 @@ def transcribe(
     """
     model = _load_model(model_name, device)
 
-    log(tr("解码音频…", "Decoding audio…"))
+    log(tr("解码音频…", "Decoding audio…", "Dekodiere Audio…"))
     audio = _decode_audio(audio_path)
 
     # Diarization runs on the CPU while Whisper uses the GPU
@@ -118,7 +120,8 @@ def transcribe(
             t = time.time()
             try:
                 diar["turns"] = diarize(audio, num_speakers=num_speakers)
-                log(tr(f"说话人分离完成，用时 {time.time() - t:.0f}s", f"Speaker separation done in {time.time() - t:.0f}s"))
+                log(tr(f"说话人分离完成，用时 {time.time() - t:.0f}s", f"Speaker separation done in {time.time() - t:.0f}s",
+                                                             f"Sprechertrennung fertig in {time.time() - t:.0f} s"))
             except Exception as e:  # never lose the transcript over speaker labels
                 diar["error"] = e
         diar_thread = threading.Thread(target=run_diarization, daemon=True)
@@ -129,7 +132,8 @@ def transcribe(
         # Sample several voiced windows: the first 30 s alone is often silence or small talk
         language, prob, _ = model.detect_language(audio, vad_filter=True, language_detection_segments=4)
         log(tr(f"检测到主要语言：{language_name(language)}（置信度 {prob:.0%}），并逐段识别语言",
-               f"Main language: {language_name(language)} ({prob:.0%} confidence); detecting per segment"))
+               f"Main language: {language_name(language)} ({prob:.0%} confidence); detecting per segment",
+               f"Hauptsprache: {language_name(language)} ({prob:.0%} Konfidenz); Erkennung pro Segment"))
 
     # The prompt steers style, so it must be in the recording's language: a Chinese
     # prompt on English audio makes Whisper output Chinese.
@@ -149,7 +153,8 @@ def transcribe(
         # mixed-language test recording. Speaker changes are handled by re-transcription.
     )
     duration = info.duration
-    log(tr(f"音频时长 {fmt_ts(duration)}，开始转写…", f"Audio length {fmt_ts(duration)}, transcribing…"))
+    log(tr(f"音频时长 {fmt_ts(duration)}，开始转写…", f"Audio length {fmt_ts(duration)}, transcribing…",
+                                             f"Audiolänge {fmt_ts(duration)}, transkribiere…"))
 
     segments: list[Segment] = []
     t0 = time.time()
@@ -165,24 +170,100 @@ def transcribe(
         if time.time() - last_report > 5:
             last_report = time.time()
             log(tr(f"  {pct:5.1f}%  [{fmt_ts(s.end)}]  已用 {time.time() - t0:.0f}s",
-                   f"  {pct:5.1f}%  [{fmt_ts(s.end)}]  {time.time() - t0:.0f}s elapsed"))
+                   f"  {pct:5.1f}%  [{fmt_ts(s.end)}]  {time.time() - t0:.0f}s elapsed",
+                   f"  {pct:5.1f}%  [{fmt_ts(s.end)}]  {time.time() - t0:.0f} s vergangen"))
     log(tr(f"转写完成，用时 {time.time() - t0:.0f}s，共 {len(segments)} 段",
-           f"Transcription done in {time.time() - t0:.0f}s, {len(segments)} segments"))
+           f"Transcription done in {time.time() - t0:.0f}s, {len(segments)} segments",
+           f"Transkription fertig in {time.time() - t0:.0f} s, {len(segments)} Segmente"))
 
     if diar_thread:
         if diar_thread.is_alive():
-            log(tr("等待说话人分离…", "Waiting for speaker separation…"))
+            log(tr("等待说话人分离…", "Waiting for speaker separation…",
+                               "Warte auf die Sprechertrennung…"))
         diar_thread.join()
         if "error" in diar:
             log(tr(f"警告：说话人分离失败（{diar['error']}），转写稿不区分说话人",
-                   f"Warning: speaker separation failed ({diar['error']}); the transcript has no speaker labels"))
+                   f"Warning: speaker separation failed ({diar['error']}); the transcript has no speaker labels",
+                   f"Warnung: Sprechertrennung fehlgeschlagen ({diar['error']}); das Transkript hat keine Sprecherkennungen"))
         elif diar["turns"]:
+            turn_langs = turn_languages(model, audio, diar["turns"]) if auto else {}
+            if len(set(turn_langs.values())) > 1:
+                # Whisper keeps one language per 30-second window and drops or translates speech
+                # in the other one; with turns in several languages, transcribe turn by turn
+                spoken = ", ".join(sorted({language_name(x) for x in turn_langs.values()}))
+                log(tr(f"多种语言（{spoken}），按说话人逐段转写…",
+                       f"Several languages ({spoken}); transcribing turn by turn…",
+                       f"Mehrere Sprachen ({spoken}); Transkription pro Redebeitrag…"))
+                segments = transcribe_by_turn(model, audio, diar["turns"], turn_langs, language, terms)
+                n = len({s.speaker for s in segments if s.speaker})
+                log(tr(f"识别出 {n} 位说话人", f"Found {n} speaker(s)", f"{n} Sprecher erkannt"))
+                return segments, duration, language
             segments = assign_speakers(model, audio, segments, diar["turns"], language, terms)
             n = len({s.speaker for s in segments if s.speaker})
-            log(tr(f"识别出 {n} 位说话人", f"Found {n} speaker(s)"))
+            log(tr(f"识别出 {n} 位说话人", f"Found {n} speaker(s)", f"{n} Sprecher erkannt"))
     if auto:
         segments = fix_languages(model, audio, segments, terms)
     return segments, duration, language
+
+
+def _speaker_runs(turns, max_gap: float = 1.0) -> list[list]:
+    """Consecutive turns of one speaker joined into [speaker, start, end]; overlaps trimmed so
+    no stretch of audio is transcribed twice."""
+    runs: list[list] = []
+    for t in sorted(turns, key=lambda t: t.start):
+        start = max(t.start, runs[-1][2]) if runs else t.start
+        if t.end <= start:
+            continue
+        if runs and runs[-1][0] == t.speaker and start - runs[-1][2] < max_gap:
+            runs[-1][2] = t.end
+        else:
+            runs.append([t.speaker, start, t.end])
+    return runs
+
+
+def turn_languages(model, audio, turns, sr: int = 16000, min_len: float = 2.0,
+                   min_prob: float = 0.8, max_checks: int = 80) -> dict[int, str]:
+    """Language of each confidently identifiable speaker run (index → code), checked on its own
+    audio. Long meetings are sampled evenly (at most `max_checks` runs)."""
+    runs = _speaker_runs(turns)
+    candidates = [i for i, (_, a, b) in enumerate(runs) if b - a >= min_len]
+    step = max(1, len(candidates) // max_checks)
+    found: dict[int, str] = {}
+    for i in candidates[::step]:
+        _, a, b = runs[i]
+        code, prob, _ = model.detect_language(audio[int(a * sr):int(min(b, a + 30) * sr)])
+        if prob >= min_prob:
+            found[i] = code
+    # One stray detection is noise, not a second language
+    counts = {code: list(found.values()).count(code) for code in set(found.values())}
+    return {i: code for i, code in found.items() if counts[code] >= 2 or len(counts) == 1}
+
+
+def transcribe_by_turn(model, audio, turns, turn_langs: dict[int, str], main_language: str,
+                       terms: str | None = None, sr: int = 16000) -> list[Segment]:
+    """Transcribe every speaker run on its own, in its own language: the run's detected language,
+    else that speaker's usual language, else the meeting's main language."""
+    from collections import Counter
+
+    from .diarize import label_speakers
+
+    runs = _speaker_runs(turns)
+    labels = label_speakers(sorted(turns, key=lambda t: t.start))
+    usual = {}
+    for spk in {r[0] for r in runs}:
+        langs = Counter(turn_langs[i] for i, r in enumerate(runs) if r[0] == spk and i in turn_langs)
+        usual[spk] = langs.most_common(1)[0][0] if langs else main_language
+    out: list[Segment] = []
+    for i, (spk, a, b) in enumerate(runs):
+        lang = turn_langs.get(i)
+        if lang is None and b - a >= 2.0:
+            code, prob, _ = model.detect_language(audio[int(a * sr):int(min(b, a + 30) * sr)])
+            lang = code if prob >= 0.6 else None
+        lang = lang or usual[spk]
+        a0, b0 = max(0.0, a - 0.2), b + 0.2
+        out += _retranscribe(model, audio[int(a0 * sr):int(b0 * sr)], lang, terms, a0, labels.get(spk),
+                             strict=b - a < 1.5, vad=b - a > 30)
+    return out
 
 
 def _script(text: str) -> str | None:
@@ -196,6 +277,29 @@ def _script(text: str) -> str | None:
 
 
 _CJK_LANGS = {"zh", "yue", "ja"}
+# Frequent function words, to tell Latin-script languages apart in a transcribed stretch
+_STOPWORDS = {
+    "en": "the and is are was were we you that this it of to in for with not have has but what they be on so can will "
+          "there would just about",
+    "de": "der die das und ist nicht ich wir sie es ein eine mit auf für zu den dem auch haben aber wie was dass noch "
+          "schon sehr sind wird werden oder",
+    "fr": "le la les et est nous vous pas une des que qui pour dans avec sur ce je il elle mais très sont",
+    "es": "el los las y es que en un una por para con no pero lo se muy son está este esta",
+    "it": "il che è non per con una sono del della ma anche questo questa gli",
+    "nl": "het een en is niet wij ik dat van voor met op maar ook zijn wordt deze",
+    "pt": "os as é que não um uma para com por mas são está muito",
+}
+_STOPWORDS = {code: set(words.split()) for code, words in _STOPWORDS.items()}
+
+
+def text_language(text: str) -> str | None:
+    """Guess the language of Latin-script text from its function words; None if unclear."""
+    words = re.findall(r"[a-zà-ÿß']+", text.lower())
+    if len(words) < 6:
+        return None
+    counts = sorted(((sum(w in sw for w in words), code) for code, sw in _STOPWORDS.items()), reverse=True)
+    (best, code), (second, _) = counts[0], counts[1]
+    return code if best >= 3 and best >= 2 * max(second, 1) else None
 _LATIN_LANGS = {"en", "fr", "de", "es", "it", "pt", "nl", "sv", "da", "no", "fi", "pl", "cs", "ro", "hu", "tr", "id", "ms", "vi"}
 
 
@@ -207,7 +311,8 @@ def fix_languages(model, audio, segments: list[Segment], terms: str | None = Non
     English right after Chinese can come out *translated* into Chinese — sometimes with the
     meaning changed ("I disagree a little" → "我认同一点"). Each stretch of one speaker is
     checked on its own audio; when the detected language and the script of the text
-    disagree, that stretch is transcribed again in the detected language.
+    disagree, that stretch is transcribed again in the detected language. Between languages
+    that share a script (German and English, say), the text's function words decide.
     """
     groups: list[list[Segment]] = []
     for s in segments:
@@ -222,27 +327,37 @@ def fix_languages(model, audio, segments: list[Segment], terms: str | None = Non
     fixed = 0
     for g in groups:
         start, end = g[0].start, g[-1].end
-        text = "".join(s.text for s in g)
-        script = _script(text)
+        script = _script(" ".join(s.text for s in g))
+        text = ("" if script == "cjk" else " ").join(s.text for s in g)
         if script is None or end - start < 1.5:
             out += g
             continue
         clip = audio[int(max(0, start - 0.2) * sr):int((end + 0.2) * sr)]
         lang, prob, _ = model.detect_language(clip)
         expected = "cjk" if lang in _CJK_LANGS else "latin" if lang in _LATIN_LANGS else None
-        if expected is None or expected == script or prob < 0.7:
+        if expected is None or prob < 0.7:
             out += g
             continue
+        if expected == script:
+            # Same script: only act when the words clearly belong to another language, and the
+            # audio is clearly in this one (a stretch long enough to judge)
+            written = text_language(text) if script == "latin" else None
+            if not (written and lang in _STOPWORDS and written != lang and prob >= 0.8 and end - start >= 3):
+                out += g
+                continue
         new = _retranscribe(model, clip, lang, terms, max(0, start - 0.2), g[0].speaker)
         if not new:
             out += g
             continue
         log(tr(f"  [{fmt_ts(start)}] 按 {language_name(lang)} 重新识别：{text[:30]}… → {new[0].text[:30]}…",
-               f"  [{fmt_ts(start)}] re-transcribed as {language_name(lang)}: {text[:30]}… → {new[0].text[:30]}…"))
+               f"  [{fmt_ts(start)}] re-transcribed as {language_name(lang)}: {text[:30]}… → {new[0].text[:30]}…",
+               f"  [{fmt_ts(start)}] neu transkribiert als {language_name(lang)}: {text[:30]}… → {new[0].text[:30]}…"))
         out += new
         fixed += 1
     if fixed:
-        log(tr(f"重新识别了 {fixed} 段被写成另一种语言的话", f"Re-transcribed {fixed} stretch(es) written in the wrong language"))
+        log(tr(f"重新识别了 {fixed} 段被写成另一种语言的话",
+               f"Re-transcribed {fixed} stretch(es) written in the wrong language",
+               f"{fixed} Abschnitt(e) in falscher Sprache neu transkribiert"))
     return out
 
 
@@ -308,12 +423,12 @@ def _prompt_for(language: str | None, terms: str | None) -> str | None:
 
 
 def _retranscribe(model, clip, language: str, terms: str | None, offset: float, speaker: str | None,
-                  strict: bool = False) -> list[Segment]:
+                  strict: bool = False, vad: bool = False) -> list[Segment]:
     """Transcribe one clip in a given language. `strict` drops output Whisper itself doubts
     (likely silence, music or noise), for clips nobody had transcribed before."""
     prompt = _prompt_for(language, terms)
     redo, _ = model.transcribe(clip, language=language, beam_size=5, initial_prompt=prompt,
-                               condition_on_previous_text=False, vad_filter=False)
+                               condition_on_previous_text=False, vad_filter=vad)
     return [Segment(offset + r.start, offset + r.end, r.text.strip(), speaker)
             for r in redo if r.text.strip() and not _HALLUCINATION.search(r.text)
             and not (strict and (r.no_speech_prob > 0.5 or r.avg_logprob < -1.0 or _too_short(r.text)))]
@@ -379,7 +494,8 @@ def assign_speakers(model, audio, segments: list[Segment], turns, main_language:
             out += parts
             split += 1
     if split:
-        log(tr(f"按说话人拆开了 {split} 段跨两人的话", f"Split {split} segment(s) that spanned two speakers"))
+        log(tr(f"按说话人拆开了 {split} 段跨两人的话", f"Split {split} segment(s) that spanned two speakers",
+                                          f"{split} Segment(e) mit zwei Sprechern aufgeteilt"))
 
     # Whisper's own voice-activity filter sometimes drops real speech (quieter voices, speech
     # over background sound). The diarizer detects speech independently: transcribe what it
@@ -400,7 +516,8 @@ def assign_speakers(model, audio, segments: list[Segment], turns, main_language:
                 lang = detected if prob >= 0.5 else main_language
             filled += _retranscribe(model, clip, lang, terms, a, labels.get(t.speaker), strict=True)
     if filled:
-        log(tr(f"补上了 {len(filled)} 段 Whisper 漏掉的话", f"Added {len(filled)} line(s) Whisper had skipped"))
+        log(tr(f"补上了 {len(filled)} 段 Whisper 漏掉的话", f"Added {len(filled)} line(s) Whisper had skipped",
+                                                    f"{len(filled)} von Whisper ausgelassene Zeile(n) ergänzt"))
         out = sorted(out + filled, key=lambda s: s.start)
     return out
 
@@ -429,7 +546,10 @@ def language_name(code: str | None) -> str:
 # Text Whisper is known to hallucinate on silence/music (learned from subtitled videos)
 _HALLUCINATION = re.compile(
     r"明镜与点点|明鏡與點點|请不吝点赞|請不吝點贊|订阅.{0,3}转发.{0,3}打赏|字幕(由|提供|製作|制作)|Amara\.org"
-    r"|谢谢观看|謝謝觀看|thanks? (you )?for watching|subtitles? by|please subscribe",
+    r"|谢谢观看|謝謝觀看|thanks? (you )?for watching|subtitles? by|please subscribe"
+    # German: credits of public broadcasters' subtitles in Whisper's training data
+    r"|Untertitel(ung)? (im Auftrag |von |der |des )*(ZDF|WDR|NDR|SWR|BR|ARD|funk)"
+    r"|Untertitel (von|im Auftrag)|vielen Dank f(ü|ue)rs Zuschauen|Copyright (WDR|ZDF|SWR)",
     re.IGNORECASE,
 )
 

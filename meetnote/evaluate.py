@@ -48,13 +48,18 @@ def _judge_batch(runner, model, transcript_msg: str, batch: list[tuple[int, str]
         raw = runner(_prompt("judge.md"), user, model, temperature=0.0)
     except SummarizeError as e:
         log(tr(f"  警告：第 {batch[0][0]}–{batch[-1][0]} 条评审失败（{e}），记为未评审",
-               f"  Warning: judging statements {batch[0][0]}–{batch[-1][0]} failed ({e}); counted as not judged"))
+               f"  Warning: judging statements {batch[0][0]}–{batch[-1][0]} failed ({e}); counted as not judged",
+               f"  Warnung: Bewertung der Aussagen {batch[0][0]}–{batch[-1][0]} fehlgeschlagen ({e}); als nicht bewertet "
+               "gezählt"))
         return {}
     try:
         data = parse_json(raw)
     except ValueError:
         log(tr(f"  警告：第 {batch[0][0]}–{batch[-1][0]} 条的评审结果不是合法 JSON，记为未评审",
-               f"  Warning: the verdict for statements {batch[0][0]}–{batch[-1][0]} is not valid JSON; counted as not judged"))
+               f"  Warning: the verdict for statements {batch[0][0]}–{batch[-1][0]} is not valid JSON; counted as not "
+               "judged",
+               f"  Warnung: Das Urteil zu den Aussagen {batch[0][0]}–{batch[-1][0]} ist kein gültiges JSON; als nicht "
+               "bewertet gezählt"))
         return {}
     items = data.get("labels", []) if isinstance(data, dict) else []
     return {int(x["id"]): x for x in items if isinstance(x, dict) and str(x.get("id", "")).isdigit()}
@@ -63,7 +68,8 @@ def _judge_batch(runner, model, transcript_msg: str, batch: list[tuple[int, str]
 def judge(doc_path: Path, transcript: str, backend: str, model: str | None) -> dict:
     claims = split_claims(doc_path.read_text(encoding="utf-8"))
     if not claims:
-        raise SummarizeError(tr(f"{doc_path.name} 里没有可评估的内容", f"Nothing to evaluate in {doc_path.name}"))
+        raise SummarizeError(tr(f"{doc_path.name} 里没有可评估的内容", f"Nothing to evaluate in {doc_path.name}",
+                                                              f"Nichts zu bewerten in {doc_path.name}"))
     _, runner = get_runner(backend)
     transcript_msg = build_user_message(transcript, None, "")
     numbered = list(enumerate(claims, 1))
@@ -80,7 +86,8 @@ def judge(doc_path: Path, transcript: str, backend: str, model: str | None) -> d
         # A "supported" verdict without quoted evidence is not evidence of support
         if label == "支持" and not str(item.get("evidence", "")).strip():
             label = "无依据"
-            item["note"] = tr("评审判为支持，但没有给出原文依据", "judged supported, but no transcript quote was given")
+            item["note"] = tr("评审判为支持，但没有给出原文依据", "judged supported, but no transcript quote was given",
+                                                  "als belegt bewertet, aber ohne Zitat aus dem Transkript")
         counts[label] += 1
         rows.append((i, claim, label, " ".join(filter(None, [item.get("evidence", ""), item.get("note", "")]))))
     checkable = sum(n for label, n in counts.items() if label not in ("不适用", "未评审"))
@@ -108,27 +115,37 @@ def report(results: list[dict], judge_model: str) -> str:
               "(lower is better; discriminates better).\n"
               "2. **Statement faithfulness**: the notes are split into single statements and judged in batches of 10 "
               "for support by the transcript; \"supported\" requires a quoted line (after FineSurE). LLM judges are "
-              "lenient here, so use it to compare versions only.\n")]
-    out.append(tr("## 问题密度\n", "## Problem density\n"))
-    out.append(tr("| 文档 | 每千字问题数 | 问题总数 | ", "| Document | Problems / 1k chars | Problems | ")
+              "lenient here, so use it to compare versions only.\n",
+              f"# Bewertung der Quellentreue\n\nBewertungsmodell: {judge_model}. Zwei Maße:\n\n"
+              "1. **Fehlerdichte**: Das Modell sucht abschnittsweise nach Fehlern; Fehler pro 1.000 Zeichen (niedriger "
+              "ist besser; trennschärfer).\n"
+              "2. **Quellentreue der Aussagen**: Das Protokoll wird in einzelne Aussagen zerlegt, die in Zehnergruppen "
+              "gegen das Transkript geprüft werden; \"belegt\" erfordert ein Zitat (nach FineSurE). LLM-Bewertungen "
+              "sind hier nachsichtig, daher nur zum Vergleich von Versionen geeignet.\n")]
+    out.append(tr("## 问题密度\n", "## Problem density\n", "## Fehlerdichte\n"))
+    out.append(tr("| 文档 | 每千字问题数 | 问题总数 | ", "| Document | Problems / 1k chars | Problems | ",
+                                             "| Dokument | Fehler / 1.000 Zeichen | Fehler | ")
                + " | ".join(show(k) for k in ISSUE_TYPES) + " |")
     out.append("|---|---|---|" + "---|" * len(ISSUE_TYPES))
     for r in results:
         t = r["issue_types"]
         out.append(f"| {r['doc']} | **{r['per_kchar']:.1f}** | {len(r['issues'])} | " + " | ".join(str(t[k]) for k in ISSUE_TYPES) + " |")
-    out.append(tr("\n## 陈述忠实度\n", "\n## Statement faithfulness\n"))
-    out.append(tr("| 文档 | 忠实度 | 陈述数 | 可核查 | 未评审 | ", "| Document | Faithfulness | Statements | Checkable | Not judged | ")
+    out.append(tr("\n## 陈述忠实度\n", "\n## Statement faithfulness\n", "\n## Quellentreue der Aussagen\n"))
+    out.append(tr("| 文档 | 忠实度 | 陈述数 | 可核查 | 未评审 | ", "| Document | Faithfulness | Statements | Checkable | Not judged | ",
+                                                     "| Dokument | Quellentreue | Aussagen | Prüfbar | Nicht bewertet "
+                                                     "| ")
                + " | ".join(show(l) for l in LABELS[1:-1]) + " |")
     out.append("|---|---|---|---|---|" + "---|" * (len(LABELS) - 2))
     for r in results:
         c = r["counts"]
         out.append(f"| {r['doc']} | **{r['score']:.0%}** | {r['claims']} | {r['checkable']} | {c['未评审']} | "
                    + " | ".join(str(c[l]) for l in LABELS[1:-1]) + " |")
-    evidence = tr("依据", "Evidence")
+    evidence = tr("依据", "Evidence", "Beleg")
     for r in results:
-        out.append(tr(f"\n## {r['doc']}：找到的问题（{len(r['issues'])}）\n", f"\n## {r['doc']}: problems found ({len(r['issues'])})\n"))
+        out.append(tr(f"\n## {r['doc']}：找到的问题（{len(r['issues'])}）\n", f"\n## {r['doc']}: problems found ({len(r['issues'])})\n",
+                                                                      f"\n## {r['doc']}: gefundene Fehler ({len(r['issues'])})\n"))
         out += [f"- **{show(i.get('type', '?'))}**: {i.get('text')}\n  - {evidence}: {i.get('evidence', '')}"
-                for i in r["issues"]] or [tr("无", "None")]
+                for i in r["issues"]] or [tr("无", "None", "Keine")]
     return "\n".join(out) + "\n"
 
 
@@ -144,20 +161,25 @@ def evaluate_dir(out_dir: Path, transcript: Path, backend: str, judge_model: str
         if not path or not path.exists():
             continue
         log(tr(f"评审《{path.stem}》（{judge_model or backend_name}，每批 {BATCH} 条）…",
-               f"Judging {path.name} ({judge_model or backend_name}, {BATCH} statements per batch)…"))
+               f"Judging {path.name} ({judge_model or backend_name}, {BATCH} statements per batch)…",
+               f"Bewerte {path.name} ({judge_model or backend_name}, {BATCH} Aussagen pro Durchgang)…"))
         try:
             r = judge(path, text, backend, judge_model)
         except SummarizeError as e:
-            log(tr(f"  评审失败，跳过：{e}", f"  Judging failed, skipped: {e}"))
+            log(tr(f"  评审失败，跳过：{e}", f"  Judging failed, skipped: {e}",
+                                     f"  Bewertung fehlgeschlagen, übersprungen: {e}"))
             continue
         c = r["counts"]
         log(tr(f"  每千字 {r['per_kchar']:.1f} 个问题（共 {len(r['issues'])}）；"
                f"陈述忠实度 {r['score']:.0%}（{c['支持']}/{r['checkable']}，未评审 {c['未评审']}）",
                f"  {r['per_kchar']:.1f} problems per 1k chars ({len(r['issues'])} total); "
-               f"statement faithfulness {r['score']:.0%} ({c['支持']}/{r['checkable']}, {c['未评审']} not judged)"))
+               f"statement faithfulness {r['score']:.0%} ({c['支持']}/{r['checkable']}, {c['未评审']} not judged)",
+               f"  {r['per_kchar']:.1f} Fehler pro 1.000 Zeichen ({len(r['issues'])} insgesamt); "
+               f"Quellentreue {r['score']:.0%} ({c['支持']}/{r['checkable']}, {c['未评审']} nicht bewertet)"))
         results.append(r)
     if not results:
-        raise SummarizeError(tr(f"{out_dir} 里没有可评估的纪要", f"No notes to evaluate in {out_dir}"))
+        raise SummarizeError(tr(f"{out_dir} 里没有可评估的纪要", f"No notes to evaluate in {out_dir}",
+                                                        f"Kein Protokoll zum Bewerten in {out_dir}"))
     out = file_path(out_dir, "faithfulness")
     out.write_text(report(results, judge_model or backend_name or DEEPSEEK_MODEL), encoding="utf-8")
     return out

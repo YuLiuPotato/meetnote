@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "meetnote"
-version = "0.1.0"
+version = "0.2.0"
 description = "会议录音 → 转写稿 + 全文梗概 + 两页精华"
 requires-python = ">=3.10"
 readme = "README.md"

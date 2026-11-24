@@ -31,7 +31,8 @@ def model_dir() -> Path:
 
 
 def _download(url: str, dest: Path) -> None:
-    log(tr(f"下载说话人模型 {url.rsplit('/', 1)[-1]} …", f"Downloading speaker model {url.rsplit('/', 1)[-1]}…"))
+    log(tr(f"下载说话人模型 {url.rsplit('/', 1)[-1]} …", f"Downloading speaker model {url.rsplit('/', 1)[-1]}…",
+                                                  f"Lade Sprechermodell herunter: {url.rsplit('/', 1)[-1]}…"))
     root = model_dir()
     root.mkdir(parents=True, exist_ok=True)
     tmp = tempfile.NamedTemporaryFile(dir=root, delete=False)
@@ -68,7 +69,8 @@ def ensure_models() -> tuple[Path, Path]:
         if not path.exists():
             _download(url, path)
             if not path.exists():
-                raise RuntimeError(tr(f"说话人模型下载后未找到 {path}", f"Speaker model not found after download: {path}"))
+                raise RuntimeError(tr(f"说话人模型下载后未找到 {path}", f"Speaker model not found after download: {path}",
+                                                             f"Sprechermodell nach dem Download nicht gefunden: {path}"))
         paths.append(path)
     return paths[0], paths[1]
 
@@ -106,10 +108,14 @@ def diarize(audio, num_speakers: int | None = None, sample_rate: int = 16000) ->
     )
     if not config.validate():
         raise RuntimeError(tr("说话人分离配置无效（模型文件损坏？可删除模型缓存后重试）",
-                               "Invalid speaker-separation setup (corrupt model file? delete the model cache and retry)"))
+                               "Invalid speaker-separation setup (corrupt model file? delete the model cache and retry)",
+                               "Ungültige Einrichtung der Sprechertrennung (Modelldatei beschädigt? Modell-Cache löschen "
+                               "und erneut versuchen)"))
     sd = sherpa_onnx.OfflineSpeakerDiarization(config)
     if sd.sample_rate != sample_rate:
-        raise RuntimeError(tr(f"说话人模型需要 {sd.sample_rate} Hz 音频", f"The speaker model needs {sd.sample_rate} Hz audio"))
+        raise RuntimeError(tr(f"说话人模型需要 {sd.sample_rate} Hz 音频", f"The speaker model needs {sd.sample_rate} Hz audio",
+                                                                 f"Das Sprechermodell braucht Audio mit {sd.sample_rate} "
+                                                                 "Hz"))
     turns = [(s.start, s.end) for s in sd.process(audio).sort_by_start_time()]
     if not turns:
         return []

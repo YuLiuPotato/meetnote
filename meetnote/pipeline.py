@@ -74,7 +74,8 @@ def rename_speakers(out_dir: Path, names: dict[str, str]) -> list[str]:
         new = re.sub(r"[\s:：]+", " ", str(new)).strip()[:40]
         if old not in current:
             raise ValueError(tr(f"转写稿里没有说话人 {old}（现有：{', '.join(current) or '无'}）",
-                                f"No speaker {old} in the transcript (existing: {', '.join(current) or 'none'})"))
+                                f"No speaker {old} in the transcript (existing: {', '.join(current) or 'none'})",
+                                f"Kein Sprecher {old} im Transkript (vorhanden: {', '.join(current) or 'keine'})"))
         if new and new != old:
             mapping[old] = new
     if not mapping:

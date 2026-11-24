@@ -61,7 +61,8 @@ class JobStore:
                 job = json.loads(status.read_text(encoding="utf-8"))
                 self.jobs[job["id"]] = job
             except (OSError, ValueError, KeyError):
-                log(tr(f"跳过损坏的任务：{status.parent}", f"Skipping a corrupt job: {status.parent}"))
+                log(tr(f"跳过损坏的任务：{status.parent}", f"Skipping a corrupt job: {status.parent}",
+                                                   f"Überspringe beschädigten Auftrag: {status.parent}"))
 
     def dir(self, jid: str) -> Path:
         return self.root / jid
@@ -123,7 +124,8 @@ class JobStore:
                 self.jobs.pop(jid)
         for jid in stale:
             shutil.rmtree(self.dir(jid), ignore_errors=True)
-            log(tr(f"已删除过期任务 {jid}", f"Deleted expired job {jid}"))
+            log(tr(f"已删除过期任务 {jid}", f"Deleted expired job {jid}",
+                                     f"Abgelaufenen Auftrag gelöscht: {jid}"))
 
 
 class Worker:
@@ -281,7 +283,8 @@ def create_app(store: JobStore, access_code: str | None):
         store.create(job)
         store.enqueue(jid)
         log(tr(f"新任务 {jid}：{filename}（{len(names)} 个文件，{size / 1e6:.1f} MB）",
-               f"New job {jid}: {filename} ({len(names)} file(s), {size / 1e6:.1f} MB)"))
+               f"New job {jid}: {filename} ({len(names)} file(s), {size / 1e6:.1f} MB)",
+               f"Neuer Auftrag {jid}: {filename} ({len(names)} Datei(en), {size / 1e6:.1f} MB)"))
         return public(store.get(jid))
 
     @app.get("/api/jobs/{jid}")
@@ -332,7 +335,8 @@ def create_app(store: JobStore, access_code: str | None):
         path = store.dir(jid) / MERGED
         if job["status"] in ACTIVE or not path.exists():
             raise HTTPException(404, "文件不存在")
-        return FileResponse(path, filename=f"{Path(job['source_files'][0]).stem}{tr('_合并', '_merged')}.mp3",
+        return FileResponse(path, filename=f"{Path(job['source_files'][0]).stem}{tr('_合并', '_merged',
+                                                                                           '_zusammengefuegt')}.mp3",
                             media_type="audio/mpeg")
 
     @app.get("/api/jobs/{jid}/zip")
@@ -343,7 +347,7 @@ def create_app(store: JobStore, access_code: str | None):
             for key in FILES:
                 if path := find_file(store.dir(jid), key):
                     z.write(path, download_name(job, path.name))
-        zip_name = quote(f"{Path(job['filename']).stem}{tr('_纪要', '_notes')}.zip")
+        zip_name = quote(f"{Path(job['filename']).stem}{tr('_纪要', '_notes', '_Protokoll')}.zip")
         return Response(buf.getvalue(), media_type="application/zip",
                         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{zip_name}"})
 
@@ -368,10 +372,13 @@ def serve(host: str, port: int, data_dir: Path, keep_days: int, keep_audio: bool
     import uvicorn
 
     try:
-        log(tr(f"总结后端：{resolve_backend(backend)}", f"Summary backend: {resolve_backend(backend)}"))
+        log(tr(f"总结后端：{resolve_backend(backend)}", f"Summary backend: {resolve_backend(backend)}",
+                                                   f"Backend für Zusammenfassungen: {resolve_backend(backend)}"))
     except SummarizeError as e:
         log(tr(f"警告：{e}\n（服务照常启动，但总结会失败，直到配置好为止）",
-               f"Warning: {e}\n(The service starts anyway, but summaries will fail until this is configured.)"))
+               f"Warning: {e}\n(The service starts anyway, but summaries will fail until this is configured.)",
+               f"Warnung: {e}\n(Der Dienst startet trotzdem, aber Zusammenfassungen schlagen fehl, bis das eingerichtet "
+               "ist.)"))
 
     store = JobStore(data_dir)
     store.expire(keep_days)
@@ -388,11 +395,14 @@ def serve(host: str, port: int, data_dir: Path, keep_days: int, keep_audio: bool
     store.resume_unfinished()
 
     access_code = os.environ.get("MEETNOTE_ACCESS_CODE") or None
-    log(tr(f"数据目录：{data_dir}", f"Data folder: {data_dir}"))
+    log(tr(f"数据目录：{data_dir}", f"Data folder: {data_dir}", f"Datenordner: {data_dir}"))
     log(tr("访问码：" + ("已启用" if access_code else "未启用（在 .env 里设 MEETNOTE_ACCESS_CODE 可开启）"),
-           "Access code: " + ("on" if access_code else "off (set MEETNOTE_ACCESS_CODE in .env to turn it on)")))
-    log(tr("访问地址：", "Open at:") + "\n  " + "\n  ".join(_addresses(host, port)))
+           "Access code: " + ("on" if access_code else "off (set MEETNOTE_ACCESS_CODE in .env to turn it on)"),
+           "Zugangscode: " + ("aktiv" if access_code else "aus (mit MEETNOTE_ACCESS_CODE in .env aktivieren)")))
+    log(tr("访问地址：", "Open at:", "Erreichbar unter:") + "\n  " + "\n  ".join(_addresses(host, port)))
     if host in ("127.0.0.1", "localhost"):
         log(tr(f"（只监听本机；同事通过 `tailscale serve --bg {port}` 访问）",
-               f"(Listening on this machine only; colleagues connect via `tailscale serve --bg {port}`)"))
+               f"(Listening on this machine only; colleagues connect via `tailscale serve --bg {port}`)",
+               "(Nur auf diesem Rechner erreichbar; Kolleginnen und Kollegen verbinden sich über `tailscale serve --bg "
+               f"{port}`)"))
     uvicorn.run(create_app(store, access_code), host=host, port=port, log_level="warning")

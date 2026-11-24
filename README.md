@@ -1,13 +1,13 @@
 # meetnote
 
-**English** | [简体中文](README.zh-CN.md)
+**English** | [简体中文](README.zh-CN.md) | [Deutsch](README.de.md)
 
 Meeting recording → **transcript with speakers** + **full synopsis** + **two-page highlights**, in one command.
 
 - **Transcription** runs locally with faster-whisper (large-v3) and uses an NVIDIA GPU automatically. An hour of audio takes a few minutes; no ffmpeg needed.
 - **Speaker separation** runs locally on the CPU (sherpa-onnx + 3D-Speaker CAM++), at the same time as transcription.
 - **Summaries** come from an LLM: DeepSeek by default, or any OpenAI-compatible service, or Claude. Every point carries a `[mm:ss]` citation, and a separate pass fact-checks the draft against the transcript before it is revised.
-- Works with Chinese, English and mixed-language meetings: each part stays in the language it was spoken in.
+- Works with Chinese, English, German and mixed-language meetings: each part stays in the language it was spoken in. The interface (messages, web page, file names) is available in Chinese, English and German.
 
 ## Install
 
@@ -29,7 +29,7 @@ API keys, port and access code live in `meetnote\.env` (created from `.env.examp
 DEEPSEEK_API_KEY=sk-your-key
 ```
 
-The interface language (messages, `--help`, reports and output file names) follows your system's display language; set `MEETNOTE_LANG=en` or `MEETNOTE_LANG=zh` in `.env` to choose. It is independent of the language of the notes.
+The interface language (messages, `--help`, reports and output file names) follows your system's display language; set `MEETNOTE_LANG=en`, `zh` or `de` in `.env` to choose. It is independent of the language of the notes.
 
 Lookup order: the file named by `MEETNOTE_ENV_FILE` → `.env` in the current folder → `meetnote\.env`. Environment variables that are already set win over the file. `.env` is in `.gitignore`; never share it.
 
@@ -74,7 +74,7 @@ meetnote rename weekly_notes S1=Alice S2=Bob
 meetnote summarize weekly_notes
 ```
 
-Output goes to `<file name>_notes\` in the current folder. File names follow the interface language (with `MEETNOTE_LANG=zh`: `<file name>_纪要\`, `转写稿.txt`, `两页精华.md`, …); a folder that already has files keeps its naming. The content of the notes follows `--summary-lang`.
+Output goes to `<file name>_notes\` in the current folder. File names follow the interface language (with `MEETNOTE_LANG=zh`: `<file name>_纪要\`, `转写稿.txt`, `两页精华.md`, …; with `de`: `<file name>_Protokoll\`, `Transkript.txt`, `Kernpunkte.md`, …); a folder that already has files keeps its naming. The content of the notes follows `--summary-lang`.
 
 ```
 weekly_notes\
@@ -89,15 +89,15 @@ weekly_notes\
 
 ### Languages
 
-- The recording language is **detected automatically, segment by segment**: in a mixed Chinese/English meeting, Chinese stays Chinese and English stays English instead of being translated. Each speaker's stretch is re-checked against its own audio, and re-transcribed if Whisper wrote it in the wrong language. Use `--language zh` (or `en`, …) to force one language.
+- The recording language is **detected automatically, segment by segment**: in a mixed Chinese/English meeting, Chinese stays Chinese and English stays English instead of being translated. Each speaker's stretch is re-checked against its own audio, and re-transcribed if Whisper wrote it in the wrong language (by writing system for Chinese/English, by function words for German/English and other Latin-script pairs). When speakers' turns are clearly in different languages, the recording is transcribed turn by turn, each turn in its own language: Whisper otherwise keeps one language per 30-second window and drops or translates the other. Use `--language zh` (or `en`, `de`, …) to force one language.
 - Summaries follow the recording's language unless you set `--summary-lang`.
 
 ### Speakers
 
 Lines are labelled `S1`, `S2`, … in order of first appearance. The notes attribute by label ("S1 argues …") and never guess real names; if someone introduces themselves or is addressed by name, they write e.g. "S2 (introduces themselves as Alice)".
 
-- **Give the head count** with `--speakers N` ("参会人数" on the web page). Without it the count is estimated.
-- **Use real names**: check what each label said in the transcript, then run `meetnote rename` (on the web page: "说话人 · 填写姓名"). If one person was split into two labels, give both the same name to merge them.
+- **Give the head count** with `--speakers N` ("Participants" on the web page). Without it the count is estimated.
+- **Use real names**: check what each label said in the transcript, then run `meetnote rename` (on the web page: "Speakers · add names"). If one person was split into two labels, give both the same name to merge them.
 - How it works: pyannote segmentation-3.0 (via sherpa-onnx) finds speech and speaker changes; every ~1.5 s of speech gets a CAM++ voice embedding (trained on Chinese and English); windows are grouped by average-linkage clustering on voice similarity. Small clusters are folded into a speaker only if they sound like that speaker; otherwise they stay separate, so short-spoken participants such as Q&A questioners are kept. Speech the speaker detector heard but Whisper skipped is transcribed separately. No Hugging Face token needed; models are cached in `%USERPROFILE%\.cache\meetnote\models`.
 - `--no-diarize` turns it off.
 - Limits: only one speaker per line when people talk over each other; one- or two-word interjections are often mislabelled; far-field and phone recordings do worse.
@@ -148,7 +148,7 @@ When several files are given, the merged recording is saved in the output folder
 
 ## Web service (for colleagues)
 
-Run it on one machine with an NVIDIA GPU; colleagues upload recordings and read or download the notes in the browser, with nothing to install. The page switches between Chinese and English (top right) and follows the browser language by default.
+Run it on one machine with an NVIDIA GPU; colleagues upload recordings and read or download the notes in the browser, with nothing to install. The page switches between Chinese, English and German (top right) and follows the browser language by default.
 
 - Jobs are queued and transcribed one at a time; an hour of audio takes 3–5 minutes.
 - Each job has an unguessable link (`/#job=…`) that can be shared.

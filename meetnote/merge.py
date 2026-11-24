@@ -33,12 +33,14 @@ def collect_inputs(paths: list[Path]) -> list[Path]:
         if p.is_dir():
             found = sorted((f for f in p.iterdir() if f.is_file() and f.suffix.lower() in AUDIO_EXTS), key=natural_key)
             if not found:
-                raise FileNotFoundError(tr(f"文件夹里没有音频文件：{p}", f"No audio files in folder: {p}"))
+                raise FileNotFoundError(tr(f"文件夹里没有音频文件：{p}", f"No audio files in folder: {p}",
+                                                              f"Keine Audiodateien im Ordner: {p}"))
             out += found
         elif p.is_file():
             out.append(p)
         else:
-            raise FileNotFoundError(tr(f"找不到音频文件：{p}", f"Audio file not found: {p}"))
+            raise FileNotFoundError(tr(f"找不到音频文件：{p}", f"Audio file not found: {p}",
+                                                       f"Audiodatei nicht gefunden: {p}"))
     return out
 
 
@@ -47,7 +49,8 @@ def _target_format(first: Path) -> tuple[int, str]:
 
     with av.open(str(first)) as c:
         if not c.streams.audio:
-            raise RuntimeError(tr(f"没有音轨：{first}", f"No audio track: {first}"))
+            raise RuntimeError(tr(f"没有音轨：{first}", f"No audio track: {first}",
+                                                   f"Keine Tonspur: {first}"))
         s = c.streams.audio[0]
         rate = s.rate or s.codec_context.sample_rate or 44100
         channels = s.codec_context.channels or 1
@@ -63,7 +66,7 @@ def merge_to_mp3(inputs: list[Path], out_path: Path, bitrate: int = 128_000,
     import av
 
     if not inputs:
-        raise ValueError(tr("没有要合并的文件", "No files to merge"))
+        raise ValueError(tr("没有要合并的文件", "No files to merge", "Keine Dateien zum Zusammenfügen"))
     rate, layout = _target_format(inputs[0])
     out_path.parent.mkdir(parents=True, exist_ok=True)
     tmp = out_path.with_name(out_path.name + ".part")
@@ -94,7 +97,8 @@ def merge_to_mp3(inputs: list[Path], out_path: Path, bitrate: int = 128_000,
             try:
                 with av.open(str(path)) as src:
                     if not src.streams.audio:
-                        raise RuntimeError(tr(f"没有音轨：{path}", f"No audio track: {path}"))
+                        raise RuntimeError(tr(f"没有音轨：{path}", f"No audio track: {path}",
+                                                              f"Keine Tonspur: {path}"))
                     for frame in src.decode(audio=0):
                         for r in resampler.resample(frame):
                             r.pts = None  # the FIFO renumbers; source timestamps don't carry over
@@ -105,10 +109,12 @@ def merge_to_mp3(inputs: list[Path], out_path: Path, bitrate: int = 128_000,
                         fifo.write(r)
                     drain()
             except av.error.FFmpegError as e:
-                raise RuntimeError(tr(f"无法读取 {path.name}：{e}", f"Cannot read {path.name}: {e}")) from e
+                raise RuntimeError(tr(f"无法读取 {path.name}：{e}", f"Cannot read {path.name}: {e}",
+                                                               f"{path.name} kann nicht gelesen werden: {e}")) from e
             end = written + fifo.samples
             parts.append({"file": path.name, "start": round(start / rate, 3), "duration": round((end - start) / rate, 3)})
             log(tr(f"  [{fmt_ts(start / rate)}] {path.name}（{fmt_ts((end - start) / rate)}）",
+                   f"  [{fmt_ts(start / rate)}] {path.name} ({fmt_ts((end - start) / rate)})",
                    f"  [{fmt_ts(start / rate)}] {path.name} ({fmt_ts((end - start) / rate)})"))
             if on_progress:
                 on_progress((i + 1) / len(inputs) * 100)

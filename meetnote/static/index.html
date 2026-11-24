@@ -28,7 +28,7 @@ body {
 main { max-width: 900px; margin: 0 auto; padding: 32px 16px 64px; }
 header h1 { margin: 0; font-size: 24px; flex: 1; }
 header p { margin: 4px 0 24px; color: var(--muted); }
-button.lang { font-size: 13px; padding: 4px 10px; color: var(--muted); }
+select.lang { width: auto; font-size: 13px; padding: 4px 8px; color: var(--muted); background: var(--card); }
 .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 20px; }
 h2 { font-size: 16px; margin: 0 0 14px; }
 .drop {
@@ -97,7 +97,9 @@ button.primary:disabled { opacity: .5; cursor: default; }
   <header>
     <div class="row" style="align-items:flex-start">
       <h1 data-i18n="appTitle">会议纪要助手</h1>
-      <button id="langBtn" class="lang" title="Language / 语言">English</button>
+      <select id="langSel" class="lang" aria-label="Language / 语言 / Sprache">
+        <option value="zh">中文</option><option value="en">English</option><option value="de">Deutsch</option>
+      </select>
     </div>
     <p data-i18n="tagline">上传会议录音，几分钟后得到转写稿、全文梗概和两页精华。</p>
   </header>
@@ -210,7 +212,6 @@ const I18N = {
     spkSave: "保存并重新生成纪要", spkPh: "姓名（不改就留空）", listSep: "、",
     tabHighlights: "两页精华", tabSynopsis: "全文梗概", tabNotes: "要点笔记", tabChecks: "核查记录",
     tabTranscript: "转写稿", tabSubtitles: "字幕 (srt)", loading: "加载中…", loadFailed: "加载失败：{e}",
-    langBtn: "English",
   },
   en: {
     appTitle: "Meeting Notes",
@@ -243,11 +244,48 @@ const I18N = {
     spkSave: "Save and regenerate notes", spkPh: "Name (leave empty to keep)", listSep: ", ",
     tabHighlights: "Highlights", tabSynopsis: "Synopsis", tabNotes: "Section notes", tabChecks: "Fact-check log",
     tabTranscript: "Transcript", tabSubtitles: "Subtitles (srt)", loading: "Loading…", loadFailed: "Failed to load: {e}",
-    langBtn: "中文",
+  },
+  de: {
+    appTitle: "Besprechungsprotokoll",
+    tagline: "Besprechungsaufnahme hochladen; wenige Minuten später gibt es Transkript, ausführliche Zusammenfassung und Kernpunkte auf zwei Seiten.",
+    gateTitle: "Zugangscode eingeben", codePh: "Zugangscode", enter: "Weiter",
+    newNotes: "Neues Protokoll", dropTitle: "Aufnahme auswählen oder hierher ziehen",
+    dropHint: "m4a, mp3, wav, mp4 und andere gängige Formate; mehrere Dateien (z. B. die WAV-Teile eines Diktiergeräts) werden in Dateinamen-Reihenfolge zu einer Aufnahme zusammengefügt",
+    fileChosen: "{size} MB · zum Ändern klicken", filesChosen: "{n} Dateien, in dieser Reihenfolge zusammengefügt",
+    filesSize: "insgesamt {size} MB · zum Ändern klicken",
+    mergedFrom: "aus {n} Dateien zusammengefügt", dlAudio: "Zusammengefügte Aufnahme herunterladen",
+    contextLabel: "Hintergrund zur Besprechung (optional; hilft bei Kontext und Fachbegriffen)",
+    contextPh: "z. B. Zwei Produktverantwortliche besprechen die Quartalsplanung",
+    termsLabel: "Namen / Fachbegriffe (optional, durch Kommas getrennt; verbessert die Erkennung)",
+    termsPh: "z. B. Kubernetes, OKR, Anna Müller",
+    recLang: "Sprache der Aufnahme", autoDetect: "Automatisch erkennen", sumLang: "Sprache des Protokolls",
+    sameAsRec: "Wie die Aufnahme",
+    headcount: "Teilnehmende", headcountTip: "Wenn die Anzahl bekannt ist, angeben: Die Sprechertrennung wird deutlich zuverlässiger",
+    estimate: "Schätzen", people: "{n}",
+    start: "Starten", uploading: "Wird hochgeladen {pct} %", uploaded: "Hochgeladen, wartet in der Warteschlange…",
+    uploadFailed: "Hochladen fehlgeschlagen",
+    netError: "Netzwerkfehler, Hochladen fehlgeschlagen", wrongCode: "Falscher Zugangscode, bitte erneut versuchen",
+    codeChanged: "Falscher oder geänderter Zugangscode, bitte erneut eingeben",
+    codeRotated: "Der Zugangscode wurde geändert, bitte erneut eingeben",
+    myJobs: "Meine Aufträge", myJobsHint: "Nur Aufträge, die in diesem Browser erstellt oder geöffnet wurden",
+    queued: "Wartet", transcribing: "Transkription", summarizing: "Zusammenfassung", done: "Fertig", failed: "Fehlgeschlagen",
+    ahead: "{n} Auftrag/Aufträge davor", soon: "Startet gleich", transcribingPct: "Transkription {pct} %",
+    generating: "Protokoll wird erstellt",
+    doneLine: "Fertig · {dur}", hm: "{h} h {m} min", ms: "{m} min {s} s", perHour: " · eine Stunde Audio dauert etwa 3–5 Minuten",
+    submitted: "Erstellt {t}", durationIs: "Dauer {d}", langIs: "Sprache {l}", autoTag: " (erkannt)", notesIn: "Protokoll auf {l}",
+    contextIs: "Hintergrund: {c}", processFailed: "Verarbeitung fehlgeschlagen", notFound: "Auftrag nicht gefunden oder abgelaufen",
+    dlAll: "Alles herunterladen", dlCurrent: "Dieses herunterladen", print: "Drucken / als PDF", share: "Link zum Teilen kopieren",
+    copied: "Kopiert", copyPrompt: "Diesen Link an Kolleginnen und Kollegen schicken:", retry: "Protokoll neu erstellen",
+    spkSummary: "Sprecher (automatisch)", spkName: "Namen eintragen",
+    spkHelp: "Im Transkript nachsehen, was jede Kennung gesagt hat, dann Namen eintragen. Wurde eine Person auf zwei Kennungen aufgeteilt, beiden denselben Namen geben. Beim Speichern wird das Protokoll mit den neuen Namen neu erstellt.",
+    spkSave: "Speichern und Protokoll neu erstellen", spkPh: "Name (leer lassen, um nichts zu ändern)", listSep: ", ",
+    tabHighlights: "Kernpunkte", tabSynopsis: "Zusammenfassung", tabNotes: "Abschnittsnotizen", tabChecks: "Faktencheck",
+    tabTranscript: "Transkript", tabSubtitles: "Untertitel (srt)", loading: "Wird geladen…", loadFailed: "Laden fehlgeschlagen: {e}",
   },
 };
 // Status and error texts come from the server in Chinese; translate the known ones
 const docEn = (d) => ({ "全文梗概": "synopsis", "两页精华": "highlights" }[d] || d);
+const docDe = (d) => ({ "全文梗概": "Zusammenfassung", "两页精华": "Kernpunkte" }[d] || d);
 const SERVER_EN = [
   [/^排队中$/, "Queued"], [/^正在转写$/, "Transcribing"], [/^正在生成总结$/, "Generating summaries"], [/^完成$/, "Done"],
   [/^服务重启，重新排队$/, "Requeued after a server restart"],
@@ -267,10 +305,33 @@ const SERVER_EN = [
   [/^还没有转写稿，无法生成总结$/, "There is no transcript yet, so summaries can't be generated"],
   [/^转写稿里没有说话人 (.+)（现有：(.*)）$/, "No speaker $1 in the transcript (existing: $2)"],
 ];
+const SERVER_DE = [
+  [/^排队中$/, "Wartet"], [/^正在转写$/, "Transkription läuft"], [/^正在生成总结$/, "Protokoll wird erstellt"], [/^完成$/, "Fertig"],
+  [/^服务重启，重新排队$/, "Nach Neustart des Dienstes erneut eingereiht"],
+  [/^正在逐段整理要点$/, "Notizen werden abschnittsweise extrahiert"], [/^正在合并录音$/, "Aufnahmen werden zusammengefügt"],
+  [/^一次最多 (\d+) 个文件$/, "Höchstens $1 Dateien pro Auftrag"],
+  [/^正在撰写《(.+)》$/, (m, d) => `Schreibe: ${docDe(d)}`],
+  [/^正在核查《(.+)》$/, (m, d) => `Faktencheck: ${docDe(d)}`],
+  [/^正在修订《(.+)》$/, (m, d) => `Überarbeite: ${docDe(d)}`],
+  [/^转写稿已生成，可稍后重新生成总结$/, "Das Transkript ist fertig; das Protokoll kann später neu erstellt werden"],
+  [/^转写失败：([\s\S]*)（请确认上传的是有效的音频文件）$/, "Transkription fehlgeschlagen: $1 (ist die Datei eine gültige Audiodatei?)"],
+  [/^总结失败：([\s\S]*)$/, "Zusammenfassen fehlgeschlagen: $1"],
+  [/^处理时发生内部错误，请联系管理员查看服务日志$/, "Interner Fehler bei der Verarbeitung; bitte die Administration das Dienstprotokoll prüfen lassen"],
+  [/^任务不存在或已过期$/, "Auftrag nicht gefunden oder abgelaufen"], [/^文件不存在$/, "Datei nicht gefunden"],
+  [/^不支持的文件类型 (.+)，请上传音频或视频文件$/, "Nicht unterstützter Dateityp $1; bitte eine Audio- oder Videodatei hochladen"],
+  [/^不支持的语言：(.+)$/, "Nicht unterstützte Sprache: $1"], [/^参会人数应在 1–20 之间$/, "Teilnehmende müssen zwischen 1 und 20 liegen"],
+  [/^文件超过 (\d+) MB$/, "Datei ist größer als $1 MB"], [/^任务还在处理中$/, "Der Auftrag läuft noch"],
+  [/^还没有转写稿，无法生成总结$/, "Noch kein Transkript, daher kann kein Protokoll erstellt werden"],
+  [/^转写稿里没有说话人 (.+)（现有：(.*)）$/, "Kein Sprecher $1 im Transkript (vorhanden: $2)"],
+];
+const SERVER = { en: SERVER_EN, de: SERVER_DE };
+const HTML_LANG = { zh: "zh-CN", en: "en", de: "de" };
+const DATE_LOCALE = { zh: "zh-CN", en: "en-GB", de: "de-DE" };
 
 let uiLang = (() => {
-  try { const v = localStorage.getItem("mn_ui_lang"); if (v === "zh" || v === "en") return v; } catch {}
-  return (navigator.language || "").toLowerCase().startsWith("zh") ? "zh" : "en";
+  try { const v = localStorage.getItem("mn_ui_lang"); if (v in I18N) return v; } catch {}
+  const nav = (navigator.language || "").toLowerCase();
+  return nav.startsWith("zh") ? "zh" : nav.startsWith("de") ? "de" : "en";
 })();
 function t(key, vars = {}) {
   const s = I18N[uiLang][key] ?? I18N.zh[key] ?? key;
@@ -278,16 +339,16 @@ function t(key, vars = {}) {
 }
 function srv(text) {
   if (!text || uiLang === "zh") return text;
-  for (const [re, out] of SERVER_EN) if (re.test(text)) return text.replace(re, out);
+  for (const [re, out] of SERVER[uiLang]) if (re.test(text)) return text.replace(re, out);
   return text;
 }
 function applyStatic() {
-  document.documentElement.lang = uiLang === "zh" ? "zh-CN" : "en";
+  document.documentElement.lang = HTML_LANG[uiLang];
   document.title = t("appTitle");
   document.querySelectorAll("[data-i18n]").forEach((el) => (el.textContent = t(el.dataset.i18n)));
   document.querySelectorAll("[data-i18n-ph]").forEach((el) => (el.placeholder = t(el.dataset.i18nPh)));
   document.querySelectorAll("[data-i18n-title]").forEach((el) => (el.title = t(el.dataset.i18nTitle)));
-  $("langBtn").textContent = t("langBtn");
+  $("langSel").value = uiLang;
   const sel = $("numSpeakers"), keep = sel.value || "0";
   sel.innerHTML = "";
   sel.add(new Option(t("estimate"), "0"));
@@ -409,7 +470,7 @@ function remember(job) {
   renderList();
 }
 function fmtTime(ts) {
-  return ts ? new Date(ts * 1000).toLocaleString(uiLang === "zh" ? "zh-CN" : "en-GB", { hour12: false }).slice(0, -3) : "";
+  return ts ? new Date(ts * 1000).toLocaleString(DATE_LOCALE[uiLang], { hour12: false }).slice(0, -3) : "";
 }
 function fmtDur(s) {
   if (!s) return "";
@@ -596,8 +657,8 @@ $("dRetry").onclick = async () => {
   renderDetail(); renderList(); poll();
 };
 
-$("langBtn").onclick = () => {
-  uiLang = uiLang === "zh" ? "en" : "zh";
+$("langSel").onchange = () => {
+  uiLang = $("langSel").value;
   try { localStorage.setItem("mn_ui_lang", uiLang); } catch {}
   applyStatic();
   renderList();
